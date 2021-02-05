@@ -42,8 +42,8 @@ open class SegmentedBarActionComponent(val place: String = ActionPlaces.NEW_TOOL
     fun paintButtonDecorations(g: Graphics2D, c: JComponent, paint: Paint): Boolean {
       return painter.paintButtonDecorations(g, c, paint)
     }
-
   }
+  protected var paintBorderAroundOneItem = true
 
   private val group: ActionGroup = object : ActionGroup() {
     override fun getChildren(e: AnActionEvent?): Array<AnAction> {
@@ -57,12 +57,9 @@ open class SegmentedBarActionComponent(val place: String = ActionPlaces.NEW_TOOL
 
   protected var actionGroup: ActionGroup? = null
     set(value) {
-      val bla = field == null && value != null
-
+      if (field == value) return
       field = value
-      if (bla) {
-        ActionToolbarImpl.updateAllToolbarsImmediately()
-      }
+      ActionToolbarImpl.updateAllToolbarsImmediately()
     }
 
   private val buttonLook = object : ActionButtonLook() {
@@ -88,6 +85,11 @@ open class SegmentedBarActionComponent(val place: String = ActionPlaces.NEW_TOOL
 
   override fun createCustomComponent(presentation: Presentation, place_: String): JComponent {
       val bar = object : ActionToolbarImpl(place, group, true) {
+        init {
+          setForceMinimumSize(true)
+          layoutPolicy = NOWRAP_LAYOUT_POLICY
+        }
+
         private var isActive = false
 
         override fun getInsets(): Insets {
@@ -173,12 +175,16 @@ open class SegmentedBarActionComponent(val place: String = ActionPlaces.NEW_TOOL
         }
 
         override fun paintBorder(g: Graphics) {
-          painter.paintActionBarBorder(this, g)
+          if(isActive || paintBorderAroundOneItem) {
+            painter.paintActionBarBorder(this, g)
+          }
         }
 
         override fun paint(g: Graphics) {
           super.paint(g)
-          painter.paintActionBarBorder(this, g)
+          if(isActive || paintBorderAroundOneItem) {
+            painter.paintActionBarBorder(this, g)
+          }
         }
 
         private fun addMetadata(component: JComponent, index: Int, count: Int) {
@@ -220,6 +226,10 @@ open class SegmentedBarActionComponent(val place: String = ActionPlaces.NEW_TOOL
       }
 
       return bar.component
+  }
+
+  private fun moreThanOneItemVisible(actions: List<AnAction>): Boolean {
+    return actions.count { action -> action.templatePresentation.isVisible } > 1
   }
 }
 

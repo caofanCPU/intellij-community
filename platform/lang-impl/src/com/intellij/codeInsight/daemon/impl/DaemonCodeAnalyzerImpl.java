@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.daemon.impl;
 
 import com.intellij.codeHighlighting.*;
@@ -25,7 +25,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RangeMarker;
-import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -159,18 +158,6 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
                                                   @NotNull Project project) {
     List<HighlightInfo> infos = new ArrayList<>();
     processHighlights(document, project, minSeverity, 0, document.getTextLength(),
-                      Processors.cancelableCollectProcessor(infos));
-    return infos;
-  }
-
-  @NotNull
-  @TestOnly
-  public static List<HighlightInfo> getHighlights(@NotNull Editor editor,
-                                                  @Nullable HighlightSeverity minSeverity,
-                                                  @NotNull Project project) {
-    List<HighlightInfo> infos = new ArrayList<>();
-    MarkupModelEx markupModel = (MarkupModelEx)editor.getMarkupModel();
-    processHighlights(markupModel, project, minSeverity, 0, editor.getDocument().getTextLength(),
                       Processors.cancelableCollectProcessor(infos));
     return infos;
   }
@@ -427,7 +414,10 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
           throw new RuntimeException(e);
         }
       });
-      return future.get();
+      return future.get(millis, TimeUnit.MILLISECONDS);
+    }
+    catch (TimeoutException | InterruptedException ex) {
+      return false;
     }
     finally {
       Disposer.dispose(disposable);
@@ -613,13 +603,17 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
     // optimisation: this check is to avoid too many re-schedules in case of thousands of event spikes
     boolean isDone = myUpdateRunnableFuture.isDone();
     if (restart && isDone) {
-      scheduleUpdateRunnable(mySettings.getAutoReparseDelay());
+      scheduleUpdateRunnable(TimeUnit.MILLISECONDS.toNanos(mySettings.getAutoReparseDelay()));
     }
 
     return canceled;
   }
 
   private void scheduleUpdateRunnable(long delayNanos) {
+    Future<?> oldFuture = myUpdateRunnableFuture;
+    if (oldFuture.isDone()) {
+      ConcurrencyUtil.manifestExceptionsIn(oldFuture);
+    }
     myUpdateRunnableFuture = myAlarm.schedule(myUpdateRunnable, delayNanos, TimeUnit.NANOSECONDS);
   }
 
@@ -635,6 +629,10 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
       return true;
     }
     return false;
+  }
+
+  void cancelSubmittedPasses() {
+    myPassExecutorService.cancelAll(true);
   }
 
 
@@ -880,7 +878,6 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
 
       // cancel all after calling createPasses() since there are perverts {@link com.intellij.util.xml.ui.DomUIFactoryImpl} who are changing PSI there
       dca.cancelUpdateProgress(true, "Cancel by alarm");
-      dca.myUpdateRunnableFuture.cancel(false);
       DaemonProgressIndicator progress = dca.createUpdateProgress(passes.keySet());
       dca.myPassExecutorService.submitPasses(passes, progress);
     }
@@ -914,9 +911,16 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx implement
     }
 
     @Override
+    public void dispose() {
+      super.dispose();
+      myFileEditors = null;
+    }
+
+    @Override
     public void stopIfRunning() {
+      Collection<? extends FileEditor> editors = myFileEditors;
       super.stopIfRunning();
-      myProject.getMessageBus().syncPublisher(DAEMON_EVENT_TOPIC).daemonFinished(myFileEditors);
+      myProject.getMessageBus().syncPublisher(DAEMON_EVENT_TOPIC).daemonFinished(editors);
       myFileEditors = null;
       HighlightingSessionImpl.clearProgressIndicator(this);
     }

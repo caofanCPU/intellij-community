@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-final class RegisteredIndexes {
+public final class RegisteredIndexes {
   @NotNull
   private final FileDocumentManager myFileDocumentManager;
   @NotNull
@@ -48,9 +48,9 @@ final class RegisteredIndexes {
                     @NotNull FileBasedIndexImpl fileBasedIndex) {
     myFileDocumentManager = fileDocumentManager;
     myFileBasedIndex = fileBasedIndex;
-    myStateFuture = IndexInfrastructure.submitGenesisTask(new FileBasedIndexDataInitialization(fileBasedIndex, this));
+    myStateFuture = IndexDataInitializer.submitGenesisTask(new FileBasedIndexDataInitialization(fileBasedIndex, this));
 
-    if (!IndexInfrastructure.ourDoAsyncIndicesInitialization) {
+    if (!IndexDataInitializer.ourDoAsyncIndicesInitialization) {
       ProgressManager.getInstance().executeNonCancelableSection(() -> {
         waitUntilIndicesAreInitialized();
       });
@@ -102,8 +102,9 @@ final class RegisteredIndexes {
   }
 
   void ensureLoadedIndexesUpToDate() {
-    myAllIndicesInitializedFuture = IndexInfrastructure.submitGenesisTask(() -> {
+    myAllIndicesInitializedFuture = IndexDataInitializer.submitGenesisTask(() -> {
       if (!myShutdownPerformed.get()) {
+        myFileBasedIndex.ensureStaleIdsDeleted();
         myFileBasedIndex.getChangedFilesCollector().ensureUpToDateAsync();
       }
       return null;
@@ -140,7 +141,7 @@ final class RegisteredIndexes {
     return myExtensionsRelatedDataWasLoaded;
   }
 
-  boolean isInitialized() {
+  public boolean isInitialized() {
     return myInitialized;
   }
 
@@ -158,7 +159,7 @@ final class RegisteredIndexes {
     return myIndicesForDirectories;
   }
 
-  boolean isContentDependentIndex(@NotNull ID<?, ?> indexId) {
+  public boolean isContentDependentIndex(@NotNull ID<?, ?> indexId) {
     return myRequiringContentIndices.contains(indexId);
   }
 

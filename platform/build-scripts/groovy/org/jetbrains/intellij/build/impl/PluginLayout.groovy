@@ -3,12 +3,14 @@ package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.Pair
 import groovy.transform.CompileStatic
+import org.jetbrains.annotations.NotNull
 import org.jetbrains.intellij.build.BuildContext
 import org.jetbrains.intellij.build.PluginBundlingRestrictions
 import org.jetbrains.intellij.build.ResourcesGenerator
 
 import java.nio.file.Path
 import java.util.function.BiFunction
+import java.util.function.BiPredicate
 
 /**
  * Describes layout of a plugin in the product distribution
@@ -22,7 +24,9 @@ final class PluginLayout extends BaseLayout {
   boolean directoryNameSetExplicitly
   PluginBundlingRestrictions bundlingRestrictions
   Collection<String> pathsToScramble = []
-  BiFunction<BuildContext, File, Boolean> scrambleClasspathFilter = { context, file -> return true } as BiFunction<BuildContext, File, Boolean>
+  Collection<String> scrambleClasspathPlugins = []
+  BiPredicate<BuildContext, File> scrambleClasspathFilter = { context, file -> return true } as BiPredicate<BuildContext, File>
+  String zkmScriptStub
 
   private PluginLayout(String mainModule) {
     this.mainModule = mainModule
@@ -42,9 +46,13 @@ final class PluginLayout extends BaseLayout {
    * to include such a library to the plugin distribution.</p>
    * @param mainModuleName name of the module containing META-INF/plugin.xml file of the plugin
    */
-  static PluginLayout plugin(String mainModuleName, @DelegatesTo(PluginLayoutSpec) Closure body = {}) {
-    def layout = new PluginLayout(mainModuleName)
-    def spec = new PluginLayoutSpec(layout)
+  static PluginLayout plugin(@NotNull String mainModuleName, @DelegatesTo(PluginLayoutSpec) Closure body = {}) {
+    if (mainModuleName.isEmpty()) {
+      throw new IllegalArgumentException("mainModuleName must be not empty")
+    }
+
+    PluginLayout layout = new PluginLayout(mainModuleName)
+    PluginLayoutSpec spec = new PluginLayoutSpec(layout)
     body.delegate = spec
     body()
     layout.directoryName = spec.directoryName
@@ -68,7 +76,7 @@ final class PluginLayout extends BaseLayout {
     return "Plugin '$mainModule'"
   }
 
-  static class PluginLayoutSpec extends BaseLayoutSpec {
+  static final class PluginLayoutSpec extends BaseLayoutSpec {
     private final PluginLayout layout
     private String directoryName
     private String mainJarName
@@ -190,10 +198,32 @@ final class PluginLayout extends BaseLayout {
     }
 
     /**
+     * Specifies a relative to $buildContext.paths.projectHome path to a zkm script stub file.
+     * If scramble tool is not defined, scramble toot will expect to find the script stub file at "$buildContext.paths.projectHome/plugins/{@code pluginName}/build/script.zkm.stub"
+     *
+     * @param relativePath - a path to a jar file relative to project home directory
+     */
+    void zkmScriptStub(String relativePath) {
+      layout.zkmScriptStub = relativePath
+    }
+
+    /**
+     * Specifies a dependent plugin name to be added to scrambled classpath
+     * Scrambling is performed by the {@link org.jetbrains.intellij.build.ProprietaryBuildTools#scrambleTool}
+     * If scramble tool is not defined, scrambling will not be performed
+     * Multiple invocations of this method will add corresponding plugin names to a list of name to be added to scramble classpath
+     *
+     * @param pluginName - a name of dependent plugin, whose jars should be added to scramble classpath
+     */
+    void scrambleClasspathPlugin(String pluginName) {
+      layout.scrambleClasspathPlugins.add(pluginName)
+    }
+
+    /**
      * Allows control over classpath entries that will be used by the scrambler to resolve references from jars being scrambled.
      * By default all platform jars are added to the 'scramble classpath'
      */
-    void filterScrambleClasspath(BiFunction<BuildContext, File, Boolean> filter) {
+    void filterScrambleClasspath(BiPredicate<BuildContext, File> filter) {
       layout.scrambleClasspathFilter = filter
     }
   }

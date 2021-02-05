@@ -16,8 +16,8 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.ArrayUtil
 import com.intellij.workspaceModel.ide.JpsImportedEntitySource
 import com.intellij.workspaceModel.ide.impl.jps.serialization.getLegacyLibraryName
-import com.intellij.workspaceModel.ide.impl.legacyBridge.filePointer.FileContainerDescription
-import com.intellij.workspaceModel.ide.impl.legacyBridge.filePointer.JarDirectoryDescription
+import com.intellij.workspaceModel.ide.impl.legacyBridge.watcher.FileContainerDescription
+import com.intellij.workspaceModel.ide.impl.legacyBridge.watcher.JarDirectoryDescription
 import com.intellij.workspaceModel.ide.impl.legacyBridge.library.LibraryBridgeImpl.Companion.toLibraryRootType
 import com.intellij.workspaceModel.ide.impl.legacyBridge.module.roots.ModuleLibraryTableBridge
 import com.intellij.workspaceModel.ide.toExternalSource
@@ -42,20 +42,25 @@ internal class LibraryStateSnapshot(
       }
     FileContainerDescription(urls, jarDirs)
   }
-  private val excludedRootsContainer = if (libraryEntity.excludedRoots.isNotEmpty()) FileContainerDescription(libraryEntity.excludedRoots,
-                                                                                                              emptyList())
-  else null
+  private val excludedRootsContainer = if (libraryEntity.excludedRoots.isNotEmpty()) {
+    FileContainerDescription(libraryEntity.excludedRoots,
+                             emptyList())
+  } else null
 
-  val kind: PersistentLibraryKind<*>?
-  val properties: LibraryProperties<*>?
-
-  init {
+  private val kindProperties by lazy {
     val customProperties = libraryEntity.getCustomProperties()
-    kind = customProperties?.libraryType?.let {
+    val k = customProperties?.libraryType?.let {
       LibraryKind.findById(it) ?: UnknownLibraryKind.getOrCreate(it)
     } as? PersistentLibraryKind<*>
-    properties = loadProperties(kind, customProperties)
+    val p = loadProperties(k, customProperties)
+    k to p
   }
+
+  val kind: PersistentLibraryKind<*>?
+    get() = kindProperties.first
+
+  val properties: LibraryProperties<*>?
+    get() = kindProperties.second
 
   private fun loadProperties(kind: PersistentLibraryKind<*>?, customProperties: LibraryPropertiesEntity?): LibraryProperties<*>? {
     if (kind == null) return null

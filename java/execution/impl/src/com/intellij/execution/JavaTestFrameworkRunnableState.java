@@ -11,6 +11,7 @@ import com.intellij.execution.process.*;
 import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.execution.target.*;
+import com.intellij.execution.target.local.LocalTargetEnvironment;
 import com.intellij.execution.testDiscovery.JavaAutoRunManager;
 import com.intellij.execution.testframework.*;
 import com.intellij.execution.testframework.actions.AbstractRerunFailedTestsAction;
@@ -60,8 +61,10 @@ import com.intellij.util.PathUtil;
 import com.intellij.util.PathsList;
 import com.intellij.util.ui.UIUtil;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.concurrency.AsyncPromise;
 import org.jetbrains.jps.model.serialization.PathMacroUtil;
 
 import java.io.File;
@@ -87,11 +90,15 @@ public abstract class JavaTestFrameworkRunnableState<T extends
   }
 
   protected ServerSocket myServerSocket;
+  protected AsyncPromise<String> myPortPromise;
   protected File myTempFile;
   protected File myWorkingDirsFile = null;
 
   private RemoteConnectionCreator remoteConnectionCreator;
   private final List<ArgumentFileFilter> myArgumentFileFilters = new ArrayList<>();
+
+  @Nullable private volatile TargetProgressIndicator myTargetProgressIndicator = null;
+  @Nullable private volatile TargetEnvironment.LocalPortBinding myPortBindingForSocket;
 
   public void setRemoteConnectionCreator(RemoteConnectionCreator remoteConnectionCreator) {
     this.remoteConnectionCreator = remoteConnectionCreator;
@@ -129,19 +136,23 @@ public abstract class JavaTestFrameworkRunnableState<T extends
     appendForkInfo(executor);
     appendRepeatMode();
 
-    SearchForTestsTask searchForTestsTask = createSearchingForTestsTask();
+    TargetEnvironment remoteEnvironment = getEnvironment().getPreparedTargetEnvironment(this, TargetProgressIndicator.EMPTY);
+    TargetedCommandLineBuilder targetedCommandLineBuilder = getTargetedCommandLine();
+    TargetedCommandLine targetedCommandLine = targetedCommandLineBuilder.build();
+
+    resolveServerSocketPort(remoteEnvironment);
+
+    Process process = remoteEnvironment.createProcess(targetedCommandLine, new EmptyProgressIndicator());
+
+    SearchForTestsTask searchForTestsTask = createSearchingForTestsTask(remoteEnvironment);
     if (searchForTestsTask != null) {
       searchForTestsTask.arrangeForIndexAccess();
       searchForTestsTask.setIncompleteIndexUsageCallback(() -> viewer.setIncompleteIndexUsed());
     }
 
-    TargetEnvironment remoteEnvironment = getEnvironment().getPreparedTargetEnvironment(this, TargetProgressIndicator.EMPTY);
-    TargetedCommandLineBuilder targetedCommandLineBuilder = getTargetedCommandLine();
-    TargetedCommandLine targetedCommandLine = targetedCommandLineBuilder.build();
-    Process process = remoteEnvironment.createProcess(targetedCommandLine, new EmptyProgressIndicator());
-
     OSProcessHandler processHandler = new KillableColoredProcessHandler.Silent(process,
-                                                                               targetedCommandLine.getCommandPresentation(remoteEnvironment),
+                                                                               targetedCommandLine
+                                                                                 .getCommandPresentation(remoteEnvironment),
                                                                                targetedCommandLine.getCharset(),
                                                                                targetedCommandLineBuilder.getFilesToDeleteOnTermination());
 
@@ -152,8 +163,25 @@ public abstract class JavaTestFrameworkRunnableState<T extends
     return processHandler;
   }
 
-  public SearchForTestsTask createSearchingForTestsTask() throws ExecutionException {
+  public void resolveServerSocketPort(@NotNull TargetEnvironment remoteEnvironment) {
+    if (myServerSocket != null) {
+      boolean local = remoteEnvironment instanceof LocalTargetEnvironment;
+      int port = local ? myServerSocket.getLocalPort() : remoteEnvironment.getLocalPortBindings().get(myPortBindingForSocket).getPort();
+      myPortPromise.setResult(String.valueOf(port));
+   }
+  }
+
+  /**
+   * @deprecated Use {@link #createSearchingForTestsTask(TargetEnvironment)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
+  public @Nullable SearchForTestsTask createSearchingForTestsTask() throws ExecutionException {
     return null;
+  }
+
+  public @Nullable SearchForTestsTask createSearchingForTestsTask(@NotNull TargetEnvironment targetEnvironment) throws ExecutionException {
+    return createSearchingForTestsTask();
   }
 
   protected boolean configureByModule(Module module) {
@@ -162,6 +190,30 @@ public abstract class JavaTestFrameworkRunnableState<T extends
 
   protected boolean isIdBasedTestTree() {
     return false;
+  }
+
+  @Override
+  public void prepareTargetEnvironmentRequest(@NotNull TargetEnvironmentRequest request,
+                                              @Nullable TargetEnvironmentConfiguration configuration,
+                                              @NotNull TargetProgressIndicator targetProgressIndicator) throws ExecutionException {
+    myTargetProgressIndicator = targetProgressIndicator;
+    T myConfiguration = getConfiguration();
+    if (myConfiguration.getProjectPathOnTarget() != null) {
+      request.setProjectPathOnTarget(myConfiguration.getProjectPathOnTarget());
+    }
+    super.prepareTargetEnvironmentRequest(request, configuration, targetProgressIndicator);
+  }
+
+  /**
+   * Returns the current {@link TargetProgressIndicator} if the call happens
+   * within the execution of {@code prepareTargetEnvironmentRequest(...)}.
+   *
+   * @return the current {@link TargetProgressIndicator} if it is present and
+   * {@code null} otherwise
+   */
+  @ApiStatus.Internal
+  protected final @Nullable TargetProgressIndicator getTargetProgressIndicator() {
+    return myTargetProgressIndicator;
   }
 
   @NotNull
@@ -254,7 +306,7 @@ public abstract class JavaTestFrameworkRunnableState<T extends
 
     return module == null ? ProjectRootManager.getInstance(project).getProjectSdk() : ModuleRootManager.getInstance(module).getSdk();
   }
-  
+
   @Override
   protected JavaParameters createJavaParameters() throws ExecutionException {
     final JavaParameters javaParameters = new JavaParameters();
@@ -537,7 +589,13 @@ public abstract class JavaTestFrameworkRunnableState<T extends
   protected void createServerSocket(JavaParameters javaParameters) {
     try {
       myServerSocket = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
-      javaParameters.getProgramParametersList().add("-socket" + myServerSocket.getLocalPort());
+      myPortPromise = new AsyncPromise<>();
+      javaParameters.getProgramParametersList().add(new CompositeParameterTargetedValue("-socket").addTargetPart(String.valueOf(myServerSocket.getLocalPort()), myPortPromise));
+      TargetEnvironmentRequest request = getTargetEnvironmentRequest();
+      if (request != null) {
+        myPortBindingForSocket = new TargetEnvironment.LocalPortBinding(myServerSocket.getLocalPort(), null);
+        request.getLocalPortBindings().add(myPortBindingForSocket);
+      }
     }
     catch (IOException e) {
       LOG.error(e);
@@ -587,7 +645,8 @@ public abstract class JavaTestFrameworkRunnableState<T extends
   protected void createTempFiles(JavaParameters javaParameters) {
     try {
       myWorkingDirsFile = FileUtil.createTempFile("idea_working_dirs_" + getFrameworkId(), ".tmp", true);
-      javaParameters.getProgramParametersList().add("@w@" + myWorkingDirsFile.getAbsolutePath());
+      javaParameters.getProgramParametersList()
+        .add(new CompositeParameterTargetedValue().addLocalPart("@w@").addPathPart(myWorkingDirsFile));
 
       myTempFile = FileUtil.createTempFile("idea_" + getFrameworkId(), ".tmp", true);
       passTempFile(javaParameters.getProgramParametersList(), myTempFile.getAbsolutePath());

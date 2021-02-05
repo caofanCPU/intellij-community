@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions;
 
 import com.intellij.CommonBundle;
@@ -164,7 +164,7 @@ public final class AboutPopup {
       myColor = Color.white;
       long aboutLinkColor = appInfo.getAboutLinkColor();
       //noinspection UseJBColor
-      myLinkColor = aboutLinkColor == -1 ? JBUI.CurrentTheme.Link.linkColor() : new Color((int)aboutLinkColor, aboutLinkColor > 0xffffff);
+      myLinkColor = aboutLinkColor == -1 ? JBUI.CurrentTheme.Link.Foreground.ENABLED : new Color((int)aboutLinkColor, aboutLinkColor > 0xffffff);
       myShowDebugInfo = showDebugInfo;
 
       setOpaque(false);
@@ -362,7 +362,7 @@ public final class AboutPopup {
 
       Font labelFont = JBFont.label();
       if (SystemInfo.isWindows) {
-        labelFont = JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 14);
+        labelFont = JBUI.Fonts.create("Segoe UI", 14);
       }
 
       int startFontSize = 14;
@@ -403,7 +403,7 @@ public final class AboutPopup {
         g2.setFont(JBUI.Fonts.miniFont());
       }
       else {
-        g2.setFont(JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 12));
+        g2.setFont(JBUI.Fonts.create("Segoe UI", 12));
       }
 
       g2.setColor(createColor(appInfo.getAboutForeground()));
@@ -805,7 +805,7 @@ public final class AboutPopup {
         final Pattern pattern = Pattern.compile("(\\d+)px");
         final Matcher matcher = pattern.matcher(htmlText);
 
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
           matcher.appendReplacement(sb, JBUIScale.scale(Integer.parseInt(matcher.group(1))) + "px");
         }

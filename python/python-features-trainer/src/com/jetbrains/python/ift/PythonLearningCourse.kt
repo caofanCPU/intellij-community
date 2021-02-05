@@ -26,6 +26,7 @@ import training.learn.lesson.general.*
 import training.learn.lesson.general.assistance.CodeFormatLesson
 import training.learn.lesson.general.assistance.ParameterInfoLesson
 import training.learn.lesson.general.assistance.QuickPopupsLesson
+import training.learn.lesson.general.navigation.FindInFilesLesson
 import training.learn.lesson.general.refactorings.ExtractMethodCocktailSortLesson
 import training.learn.lesson.general.refactorings.ExtractVariableFromBubbleLesson
 import training.learn.lesson.kimpl.LessonUtil
@@ -35,9 +36,8 @@ class PythonLearningCourse : LearningCourseBase(PythonLanguage.INSTANCE.id) {
   override fun modules() = (if (switchOnExperimentalLessons) experimentalModules() else emptyList()) + stableModules()
 
   private fun experimentalModules() = listOf(
-    @Suppress("HardCodedStringLiteral")
-    LearningModule(name = "Essential",
-                   description = "A brief overview of the main ${LessonUtil.productName} features.",
+    LearningModule(name = PythonLessonsBundle.message("python.onboarding.module.name"),
+                   description = PythonLessonsBundle.message("python.onboarding.module.description", LessonUtil.productName),
                    primaryLanguage = langSupport,
                    moduleType = LessonType.PROJECT) {
       listOf(
@@ -93,7 +93,7 @@ class PythonLearningCourse : LearningCourseBase(PythonLanguage.INSTANCE.id) {
     LearningModule(name = LessonsBundle.message("code.assistance.module.name"),
                    description = LessonsBundle.message("code.assistance.module.description"),
                    primaryLanguage = langSupport,
-                   moduleType = LessonType.PROJECT) {
+                   moduleType = LessonType.SINGLE_EDITOR) {
       fun ls(sampleName: String) = loadSample("CodeAssistance/$sampleName")
       listOf(
         CodeFormatLesson(it, lang, ls("CodeFormat.py.sample"), true),
@@ -107,16 +107,17 @@ class PythonLearningCourse : LearningCourseBase(PythonLanguage.INSTANCE.id) {
                    primaryLanguage = langSupport,
                    moduleType = LessonType.PROJECT) {
       listOf(
+        PythonSearchEverywhereLesson(it),
+        FindInFilesLesson(it, lang, "src/warehouse/find_in_files_sample.py"),
         PythonDeclarationAndUsagesLesson(it),
         PythonFileStructureLesson(it),
         PythonRecentFilesLesson(it),
-        PythonSearchEverywhereLesson(it),
       )
     },
     LearningModule(name = LessonsBundle.message("run.debug.module.name"),
                    description = LessonsBundle.message("run.debug.module.description"),
                    primaryLanguage = langSupport,
-                   moduleType = LessonType.PROJECT) {
+                   moduleType = LessonType.SINGLE_EDITOR) {
       listOf(
         PythonRunConfigurationLesson(it),
         PythonDebugLesson(it),

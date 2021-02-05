@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vfs.local;
 
 import com.intellij.openapi.util.Pair;
@@ -13,7 +13,6 @@ import com.intellij.testFramework.rules.TempDirectory;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.Function;
 import com.intellij.util.containers.MultiMap;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.After;
@@ -304,14 +303,14 @@ public class VirtualFileVisitorTest extends BareTestFixtureTestCase {
 
   private static class AbortException extends RuntimeException { }
 
-  private void doTest(@Nullable Function<VirtualFile, Object> condition,
-                      @Nullable Function<VirtualFile, Iterable<VirtualFile>> iterable,
+  private void doTest(@Nullable Function<? super VirtualFile, Object> condition,
+                      @Nullable Function<? super VirtualFile, ? extends Iterable<VirtualFile>> iterable,
                       @NotNull String expected,
                       VirtualFileVisitor.Option @NotNull ... options) {
     MultiMap<VirtualFile, Pair<VirtualFile, String>> visitLog = MultiMap.create();
     Map<VirtualFile, String> backLog = new HashMap<>();
     try {
-      Set<VirtualFile> visited = new THashSet<>();
+      Set<VirtualFile> visited = new HashSet<>();
       VfsUtilCore.visitChildrenRecursively(myRoot, new VirtualFileVisitor<Integer>(options) {
         { setValueForChildren(0); }
 

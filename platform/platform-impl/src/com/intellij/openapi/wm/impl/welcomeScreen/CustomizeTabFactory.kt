@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl.welcomeScreen
 
 import com.intellij.ide.IdeBundle
@@ -6,15 +6,12 @@ import com.intellij.ide.actions.QuickChangeLookAndFeel
 import com.intellij.ide.actions.ShowSettingsUtilImpl
 import com.intellij.ide.ui.*
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.PlatformEditorBundle
 import com.intellij.openapi.editor.colors.EditorColorsListener
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.ex.DefaultColorSchemesManager
-import com.intellij.openapi.editor.colors.impl.AppEditorFontOptions
 import com.intellij.openapi.editor.colors.impl.EditorColorsManagerImpl
-import com.intellij.openapi.editor.colors.impl.FontPreferencesImpl
 import com.intellij.openapi.help.HelpManager
 import com.intellij.openapi.keymap.KeyMapBundle
 import com.intellij.openapi.keymap.Keymap
@@ -29,14 +26,13 @@ import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
-import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.wm.WelcomeTabFactory
 import com.intellij.openapi.wm.impl.welcomeScreen.TabbedWelcomeScreen.DefaultWelcomeScreenTab
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.UIBundle
+import com.intellij.ui.components.ActionLink
+import com.intellij.ui.components.AnActionLink
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.Link
-import com.intellij.ui.components.labels.ActionLink
 import com.intellij.ui.layout.*
 import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.ui.JBFont
@@ -50,7 +46,6 @@ import javax.swing.plaf.FontUIResource
 import javax.swing.plaf.LabelUI
 
 private val settings get() = UISettings.instance
-private val fontOptions get() = AppEditorFontOptions.getInstance().fontPreferences as FontPreferencesImpl
 private val defaultProject get() = ProjectManager.getInstance().defaultProject
 
 private val laf get() = LafManager.getInstance()
@@ -62,7 +57,6 @@ class CustomizeTabFactory : WelcomeTabFactory {
 }
 
 private fun getIdeFont() = if (settings.overrideLafFonts) settings.fontSize else JBFont.label().size
-private fun getEditorFont() = fontOptions.getSize(fontOptions.fontFamily)
 
 class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBundle.message("welcome.screen.customize.title"),
                                                                            WelcomeScreenEventCollector.TabType.TabNavCustomize) {
@@ -71,7 +65,6 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
   private val lafProperty = propertyGraph.graphProperty { laf.lookAndFeelReference }
   private val syncThemeProperty = propertyGraph.graphProperty { laf.autodetect }
   private val ideFontProperty = propertyGraph.graphProperty { getIdeFont() }
-  private val editorFontProperty = propertyGraph.graphProperty { getEditorFont() }
   private val keymapProperty = propertyGraph.graphProperty { keymapManager.activeKeymap }
   private val colorBlindnessProperty = propertyGraph.graphProperty { settings.colorBlindness ?: supportedColorBlindness.firstOrNull() }
   private val adjustColorsProperty = propertyGraph.graphProperty { settings.colorBlindness != null }
@@ -98,13 +91,6 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
                                   settings.fontSize = it
                                   updateFontSettingsLater()
                                 }, parentDisposable)
-    editorFontProperty.afterChange({
-                                     val oldSize = fontOptions.getSize(fontOptions.fontFamily)
-                                     if (oldSize == it) return@afterChange
-                                     WelcomeScreenEventCollector.logEditorFontChanged(oldSize, it)
-                                     fontOptions.setSize(fontOptions.fontFamily, it)
-                                     updateFontSettingsLater()
-                                   }, parentDisposable)
     keymapProperty.afterChange({
                                  if (keymapManager.activeKeymap == it) return@afterChange
                                  WelcomeScreenEventCollector.logKeymapChanged(it)
@@ -163,7 +149,6 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
   }
 
   private fun updateAccessibilityProperties() {
-    updateProperty(editorFontProperty) { getEditorFont() }
     val adjustColorSetting = settings.colorBlindness != null
     updateProperty(adjustColorsProperty) { adjustColorSetting }
     if (adjustColorSetting) {
@@ -195,10 +180,6 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
         row(IdeBundle.message("welcome.screen.ide.font.size.label"))
         {
           fontComboBox(ideFontProperty)
-        }
-        row(IdeBundle.message("welcome.screen.editor.font.size.label"))
-        {
-          fontComboBox(editorFontProperty)
         }.largeGapAfter()
 
         createColorBlindnessSettingBlock()
@@ -208,16 +189,15 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
         fullRow {
           keymapComboBox = comboBox(DefaultComboBoxModel(getKeymaps().toTypedArray()), keymapProperty).component
           keymapComboBox!!.accessibleContext.accessibleName = KeyMapBundle.message("keymap.display.name")
-          component(focusableLink(KeyMapBundle.message("welcome.screen.keymap.configure.link")) {
+          component(ActionLink(KeyMapBundle.message("welcome.screen.keymap.configure.link")) {
             ShowSettingsUtil.getInstance().showSettingsDialog(defaultProject, KeyMapBundle.message("keymap.display.name"))
           }).withLargeLeftGap()
         }
       }
       blockRow {
-        val action = ActionManager.getInstance().getAction("WelcomeScreen.Configure.Import")
-        component(ActionLink(action.templateText, null, action).apply { isFocusable = true })
+        component(AnActionLink("WelcomeScreen.Configure.Import"))
         row {
-          component(focusableLink(IdeBundle.message("welcome.screen.all.settings.link")) {
+          component(ActionLink(IdeBundle.message("welcome.screen.all.settings.link")) {
             ShowSettingsUtil.getInstance().showSettingsDialog(defaultProject,
                                                               *ShowSettingsUtilImpl.getConfigurableGroups(defaultProject, true))
           })
@@ -256,7 +236,7 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
             PlatformEditorBundle.message(it?.key ?: "")
           }).comment(UIBundle.message("color.blindness.combobox.comment")).enableIf(checkBox.selected)
         }
-        component(focusableLink(UIBundle.message("color.blindness.link.to.help"))
+        component(ActionLink(UIBundle.message("color.blindness.link.to.help"))
                   { HelpManager.getInstance().invokeHelp("Colorblind_Settings") })
           .withLargeLeftGap()
       }
@@ -276,10 +256,6 @@ class CustomizeTab(parentDisposable: Disposable) : DefaultWelcomeScreenTab(IdeBu
         font = FontUIResource(font.deriveFont(font.size2D + JBUIScale.scale(3)).deriveFont(Font.BOLD))
       }
     }
-  }
-
-  private fun focusableLink(@NlsContexts.Label text: String, action: () -> Unit): JComponent {
-    return Link(text, null, action).apply { isFocusable = true }
   }
 
   private fun Cell.fontComboBox(fontProperty: GraphProperty<Int>): CellBuilder<ComboBox<Int>> {

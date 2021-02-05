@@ -17,6 +17,7 @@ import de.plushnikov.intellij.plugin.util.PsiAnnotationUtil;
 import de.plushnikov.intellij.plugin.util.PsiClassUtil;
 import de.plushnikov.intellij.plugin.util.PsiMethodUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -44,6 +45,12 @@ public class ToStringProcessor extends AbstractClassProcessor {
 
   private EqualsAndHashCodeToStringHandler getEqualsAndHashCodeToStringHandler() {
     return ApplicationManager.getApplication().getService(EqualsAndHashCodeToStringHandler.class);
+  }
+
+  @Override
+  protected boolean possibleToGenerateElementNamed(@Nullable String nameHint, @NotNull PsiClass psiClass,
+                                                   @NotNull PsiAnnotation psiAnnotation) {
+    return nameHint == null || nameHint.equals(TO_STRING_METHOD_NAME);
   }
 
   @Override
@@ -144,8 +151,8 @@ public class ToStringProcessor extends AbstractClassProcessor {
       paramString.append("super=\" + super.toString() + \", ");
     }
 
+    final EqualsAndHashCodeToStringHandler handler = getEqualsAndHashCodeToStringHandler();
     for (MemberInfo memberInfo : memberInfos) {
-
       if (includeFieldNames) {
         paramString.append(memberInfo.getName()).append('=');
       }
@@ -161,7 +168,7 @@ public class ToStringProcessor extends AbstractClassProcessor {
         }
       }
 
-      final String memberAccessor = getEqualsAndHashCodeToStringHandler().getMemberAccessorName(memberInfo, doNotUseGetters, psiClass);
+      final String memberAccessor = handler.getMemberAccessorName(memberInfo, doNotUseGetters, psiClass);
       paramString.append("this.").append(memberAccessor);
 
       if (classFieldType instanceof PsiArrayType) {

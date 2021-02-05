@@ -19,8 +19,7 @@ import com.intellij.ui.content.ContentManagerEvent
 import com.intellij.ui.content.ContentManagerListener
 import com.intellij.util.IJSwingUtilities
 import com.intellij.util.ObjectUtils.tryCast
-import com.intellij.vcs.commit.CommitWorkflowManager
-import com.intellij.vcs.commit.CommitWorkflowManager.Companion.isNonModalInSettings
+import com.intellij.vcs.commit.CommitModeManager
 import org.jetbrains.annotations.NonNls
 import java.util.function.Predicate
 import kotlin.properties.Delegates.observable
@@ -57,7 +56,7 @@ class ChangesViewContentManager(private val project: Project) : ChangesViewConte
   }
 
   private var isCommitToolWindowShown: Boolean
-    by observable(isCommitToolWindowRegistryValue.asBoolean() && isNonModalInSettings()) { _, oldValue, newValue ->
+    by observable(shouldUseCommitToolWindow()) { _, oldValue, newValue ->
       if (oldValue == newValue) return@observable
 
       remapContents()
@@ -68,11 +67,17 @@ class ChangesViewContentManager(private val project: Project) : ChangesViewConte
     isCommitToolWindowRegistryValue.addListener(object : RegistryValueListener {
       override fun afterValueChanged(value: RegistryValue) = updateToolWindowMapping()
     }, this)
+    project.messageBus.connect().subscribe(CommitModeManager.COMMIT_MODE_TOPIC, object : CommitModeManager.CommitModeListener {
+      override fun commitModeChanged() = updateToolWindowMapping()
+    })
   }
 
-  fun updateToolWindowMapping() {
-    isCommitToolWindowShown = CommitWorkflowManager.getInstance(project).isNonModal() && isCommitToolWindowRegistryValue.asBoolean()
+  private fun updateToolWindowMapping() {
+    isCommitToolWindowShown = shouldUseCommitToolWindow()
   }
+
+  private fun shouldUseCommitToolWindow() = CommitModeManager.getInstance(project).getCurrentCommitMode().useCommitToolWindow() &&
+                                            isCommitToolWindowRegistryValue.asBoolean()
 
   private fun remapContents() {
     val remapped = findContents { it.resolveContentManager() != it.manager }

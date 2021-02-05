@@ -4,12 +4,14 @@ package com.intellij.application.options.colors;
 import com.intellij.Patches;
 import com.intellij.application.options.EditorFontsConstants;
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeTooltipManager;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.FontPreferences;
 import com.intellij.openapi.editor.colors.ModifiableFontPreferences;
+import com.intellij.openapi.options.ex.Settings;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
@@ -137,6 +139,10 @@ public abstract class AbstractFontOptionsPanel extends JPanel implements Options
     JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
     myEnableLigaturesCheckbox.setBorder(null);
     panel.add(myEnableLigaturesCheckbox);
+    JLabel hintLabel = new JLabel(AllIcons.General.ContextHelp);
+    hintLabel.setToolTipText(ApplicationBundle.message("ligatures.tooltip"));
+    hintLabel.setBorder(JBUI.Borders.emptyLeft(5));
+    panel.add(hintLabel);
     JLabel warningIcon = new JLabel(AllIcons.General.BalloonWarning);
     IdeTooltipManager.getInstance().setCustomTooltip(
       warningIcon,
@@ -152,6 +158,10 @@ public abstract class AbstractFontOptionsPanel extends JPanel implements Options
     c.insets = getInsets(ADDITIONAL_VERTICAL_GAP, 0);
     c.insets.bottom = BASE_INSET;
     fontPanel.add(panel, c);
+
+    c.gridx = 0;
+    c.gridy ++;
+    fontPanel.add(createReaderModeHyperLink(), c);
 
     mySecondaryCombo.setEnabled(false);
 
@@ -243,21 +253,40 @@ public abstract class AbstractFontOptionsPanel extends JPanel implements Options
     return fontPanel;
   }
 
+  @NotNull
+  private static HyperlinkLabel createReaderModeHyperLink() {
+    HyperlinkLabel hyperlinkLabel = new HyperlinkLabel();
+    hyperlinkLabel.setTextWithHyperlink(ApplicationBundle.message("comment.use.ligatures.with.reader.mode"));
+    hyperlinkLabel.setForeground(UIUtil.getLabelFontColor(UIUtil.FontColor.BRIGHTER));
+    UIUtil.applyStyle(UIUtil.ComponentStyle.SMALL, hyperlinkLabel);
+
+    hyperlinkLabel.addHyperlinkListener(e -> {
+      DataManager.getInstance().getDataContextFromFocusAsync().onSuccess(context -> {
+        if (context == null) return;
+        Settings settings = Settings.KEY.getData(context);
+        if (settings == null) return;
+        settings.select(settings.find("editor.reader.mode"));
+        ReaderModeStatsCollector.logSeeAlsoNavigation();
+      });
+    });
+    return hyperlinkLabel;
+  }
+
   protected final void createSecondaryFontComboAndLabel(@NotNull JPanel target, @NotNull GridBagConstraints c) {
     mySecondaryFontLabel = new JLabel(ApplicationBundle.message("secondary.font"));
     mySecondaryFontLabel.setLabelFor(mySecondaryCombo);
     target.add(mySecondaryFontLabel, c);
+    c.insets = getInsets(0, 0);
     c.gridx = 1;
     target.add(mySecondaryCombo, c);
     c.gridy ++;
-    c.insets = getInsets(0, BASE_INSET);
     JBLabel fallbackLabel = new JBLabel(ApplicationBundle.message("label.fallback.fonts.list.description"));
     fallbackLabel.setFont(JBUI.Fonts.smallFont());
     fallbackLabel.setForeground(UIUtil.getContextHelpForeground());
     target.add(fallbackLabel, c);
   }
 
-  private static Insets getInsets(int extraTopSpacing, int extraLeftSpacing) {
+  protected static Insets getInsets(int extraTopSpacing, int extraLeftSpacing) {
     return JBUI.insets(BASE_INSET + extraTopSpacing, BASE_INSET + extraLeftSpacing, 0, 0);
   }
 

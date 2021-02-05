@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
 import com.intellij.BundleBase;
@@ -553,8 +553,9 @@ public final class UIUtil {
    * @return the property value from the specified component or {@code null}
    */
   public static <T> T getClientProperty(Object component, @NotNull Key<T> key) {
+    Object value = getClientProperty(component, (Object)key);
     //noinspection unchecked
-    return (T)getClientProperty(component, (Object)key);
+    return value != null ? (T)value : null;
   }
 
   public static <T> void putClientProperty(@NotNull JComponent component, @NotNull Key<T> key, T value) {
@@ -873,7 +874,7 @@ public final class UIUtil {
   }
 
   public static @NotNull Color getContextHelpForeground() {
-    return JBColor.namedColor("Label.infoForeground", new JBColor(Gray.x78, Gray.x8C));
+    return JBUI.CurrentTheme.ContextHelp.FOREGROUND;
   }
 
   public static @Nls @NotNull String removeMnemonic(@Nls @NotNull String s) {
@@ -922,24 +923,8 @@ public final class UIUtil {
     return JBColor.namedColor("Component.infoForeground", new JBColor(Gray.x99, Gray.x78));
   }
 
-  /**
-   * @deprecated use {@link UIUtil#getTextFieldBackground()} instead
-   */
-  @Deprecated
-  public static Color getActiveTextFieldBackgroundColor() {
-    return getTextFieldBackground();
-  }
-
   public static Color getInactiveTextFieldBackgroundColor() {
     return UIManager.getColor("TextField.inactiveBackground");
-  }
-
-  /**
-   * @deprecated use {@link UIUtil#getInactiveTextColor()} instead
-   */
-  @Deprecated
-  public static @NotNull Color getTextInactiveTextColor() {
-    return getInactiveTextColor();
   }
 
   public static Color getTreeSelectionBorderColor() {
@@ -1046,22 +1031,8 @@ public final class UIUtil {
     return UIManager.getFont("Menu.font");
   }
 
-  /**
-   * @deprecated use {@link JBUI.CurrentTheme.CustomFrameDecorations#separatorForeground()}
-   */
-  @Deprecated
-  public static @NotNull Color getSeparatorForeground() {
-    return JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground();
-  }
-
   public static Color getSeparatorShadow() {
     return UIManager.getColor("Separator.shadow");
-  }
-
-  @SuppressWarnings("MissingDeprecatedAnnotation")
-  @Deprecated
-  public static Color getSeparatorHighlight() {
-    return UIManager.getColor("Separator.highlight");
   }
 
   /**
@@ -1119,12 +1090,6 @@ public final class UIUtil {
     return AllIcons.General.BalloonError;
   }
 
-  @SuppressWarnings("MissingDeprecatedAnnotation")
-  @Deprecated
-  public static Icon getRadioButtonIcon() {
-    return UIManager.getIcon("RadioButton.icon");
-  }
-
   public static @NotNull Icon getTreeNodeIcon(boolean expanded, boolean selected, boolean focused) {
     boolean white = selected && focused || StartupUiUtil.isUnderDarcula();
 
@@ -1152,14 +1117,6 @@ public final class UIUtil {
 
   public static @NotNull Icon getTreeExpandedIcon() {
     return UIManager.getIcon("Tree.expandedIcon");
-  }
-
-  /**
-   * @deprecated use {@link #getTreeExpandedIcon()} and {@link #getTreeCollapsedIcon()}
-   */
-  @Deprecated
-  public static Icon getTreeIcon(boolean expanded) {
-    return expanded ? getTreeExpandedIcon() : getTreeCollapsedIcon();
   }
 
   public static @NotNull Icon getTreeSelectedCollapsedIcon() {
@@ -1451,50 +1408,48 @@ public final class UIUtil {
     }
   }
 
-  @SuppressWarnings("UnregisteredNamedColor")
+  @SuppressWarnings({"UnregisteredNamedColor", "UseJBColor"})
   public static void drawSearchMatch(@NotNull Graphics2D g,
                                      final float startX,
                                      final float endX,
                                      final int height) {
-    Color c1 = JBColor.namedColor("SearchMatch.startBackground", JBColor.namedColor("SearchMatch.startColor", 0xffeaa2));
-    Color c2 = JBColor.namedColor("SearchMatch.endBackground", JBColor.namedColor("SearchMatch.endColor", 0xffd042));
+    Color c1 = JBColor.namedColor("SearchMatch.startBackground", JBColor.namedColor("SearchMatch.startColor", new Color(0xb3ffeaa2, true)));
+    Color c2 = JBColor.namedColor("SearchMatch.endBackground", JBColor.namedColor("SearchMatch.endColor", new Color(0xb3ffd042, true)));
     drawSearchMatch(g, startX, endX, height, c1, c2);
   }
 
   public static void drawSearchMatch(@NotNull Graphics2D g, float startXf, float endXf, int height, Color c1, Color c2) {
-    GraphicsConfig config = new GraphicsConfig(g);
-    float alpha = JBUI.getInt("SearchMatch.transparency", 70) / 100f;
-    alpha = alpha < 0 || alpha > 1 ? 0.7f : alpha;
-    g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
-    g.setPaint(getGradientPaint(startXf, 2, c1, startXf, height - 5, c2));
+    Graphics2D g2 = (Graphics2D)g.create();
+    try {
+      g2.setPaint(getGradientPaint(startXf, 2, c1, startXf, height - 5, c2));
 
-    if (JreHiDpiUtil.isJreHiDPI(g)) {
-      GraphicsConfig c = GraphicsUtil.setupRoundedBorderAntialiasing(g);
-      g.fill(new RoundRectangle2D.Float(startXf, 2, endXf - startXf, height - 4, 5, 5));
-      c.restore();
-      config.restore();
-      return;
+      if (JreHiDpiUtil.isJreHiDPI(g2)) {
+        GraphicsUtil.setupRoundedBorderAntialiasing(g2);
+        g2.fill(new RoundRectangle2D.Float(startXf, 2, endXf - startXf, height - 4, 5, 5));
+      }
+      else {
+        int startX = (int)startXf;
+        int endX = (int)endXf;
+
+        g2.fillRect(startX, 3, endX - startX, height - 5);
+
+        boolean drawRound = endXf - startXf > 4;
+        if (drawRound) {
+          LinePainter2D.paint(g2, startX - 1, 4, startX - 1, height - 4);
+          LinePainter2D.paint(g2, endX, 4, endX, height - 4);
+
+          g2.setColor(new Color(100, 100, 100, 50));
+          LinePainter2D.paint(g2, startX - 1, 4, startX - 1, height - 4);
+          LinePainter2D.paint(g2, endX, 4, endX, height - 4);
+
+          LinePainter2D.paint(g2, startX, 3, endX - 1, 3);
+          LinePainter2D.paint(g2, startX, height - 3, endX - 1, height - 3);
+        }
+      }
     }
-
-    int startX = (int)startXf;
-    int endX = (int)endXf;
-
-    g.fillRect(startX, 3, endX - startX, height - 5);
-
-    final boolean drawRound = endXf - startXf > 4;
-    if (drawRound) {
-      LinePainter2D.paint(g, startX - 1, 4, startX - 1, height - 4);
-      LinePainter2D.paint(g, endX, 4, endX, height - 4);
-
-      g.setColor(new Color(100, 100, 100, 50));
-      LinePainter2D.paint(g, startX - 1, 4, startX - 1, height - 4);
-      LinePainter2D.paint(g, endX, 4, endX, height - 4);
-
-      LinePainter2D.paint(g, startX, 3, endX - 1, 3);
-      LinePainter2D.paint(g, startX, height - 3, endX - 1, height - 3);
+    finally {
+      g2.dispose();
     }
-
-    config.restore();
   }
 
   private static void drawBoringDottedLine(final @NotNull Graphics2D g,
@@ -1622,14 +1577,6 @@ public final class UIUtil {
   }
 
   /**
-   * @deprecated Use {@link ImageUtil#createImage(GraphicsConfiguration, int, int, int)}
-   */
-  @Deprecated
-  public static @NotNull BufferedImage createImage(@Nullable GraphicsConfiguration gc, int width, int height, int type) {
-    return ImageUtil.createImage(gc, width, height, type);
-  }
-
-  /**
    * Creates a HiDPI-aware BufferedImage in the graphics config scale.
    *
    * @param gc the graphics config
@@ -1670,14 +1617,6 @@ public final class UIUtil {
    */
   public static @NotNull BufferedImage createImage(@Nullable Component component, int width, int height, int type) {
     return ImageUtil.createImage(component == null ? null : component.getGraphicsConfiguration(), width, height, type);
-  }
-
-  /**
-   * @deprecated use {@link #createImage(Graphics, int, int, int)}
-   */
-  @Deprecated
-  public static @NotNull BufferedImage createImageForGraphics(Graphics2D g, int width, int height, int type) {
-    return ImageUtil.createImage(g, width, height, type);
   }
 
   /**
@@ -1878,7 +1817,7 @@ public final class UIUtil {
 
   @Language("HTML")
   public static @NlsSafe @NotNull String getCssFontDeclaration(@NotNull Font font) {
-    return getCssFontDeclaration(font, getLabelForeground(), JBUI.CurrentTheme.Link.linkColor(), null);
+    return getCssFontDeclaration(font, getLabelForeground(), JBUI.CurrentTheme.Link.Foreground.ENABLED, null);
   }
 
   @Language("HTML")
@@ -1999,32 +1938,11 @@ public final class UIUtil {
     return StartupUiUtil.getLabelFont();
   }
 
-  /**
-   * @deprecated use getBorderColor instead
-   */
-  @Deprecated
-  public static @NotNull Color getBorderInactiveColor() {
-    return JBColor.border();
-  }
-
-  /**
-   * @deprecated use getBorderColor instead
-   */
-  @Deprecated
-  public static @NotNull Color getBorderActiveColor() {
-    return JBColor.border();
-  }
-
-  /**
-   * @deprecated use getBorderColor instead
-   */
-  @Deprecated
-  public static @NotNull Color getBorderSeparatorColor() {
-    return JBColor.border();
-  }
-
   public static @Nullable StyleSheet loadStyleSheet(@Nullable URL url) {
-    if (url == null) return null;
+    if (url == null) {
+      return null;
+    }
+
     try {
       StyleSheet styleSheet = new StyleSheet();
       styleSheet.loadRules(new InputStreamReader(url.openStream(), StandardCharsets.UTF_8), url);
@@ -2606,14 +2524,6 @@ public final class UIUtil {
   @Deprecated
   public static @NotNull Timer createNamedTimer(@NonNls @NotNull String name, int delay, @NotNull ActionListener listener) {
     return TimerUtil.createNamedTimer(name, delay, listener);
-  }
-
-  /**
-   * @deprecated Use {@link TimerUtil#createNamedTimer(String, int)}
-   */
-  @Deprecated
-  public static @NotNull Timer createNamedTimer(@NonNls @NotNull String name, int delay) {
-    return TimerUtil.createNamedTimer(name, delay);
   }
 
   public static boolean isDialogRootPane(JRootPane rootPane) {
@@ -3340,14 +3250,6 @@ public final class UIUtil {
     return getTableSelectionBackground(true);
   }
 
-  /**
-   * @deprecated use {@link #getTableSelectionBackground(boolean)}
-   */
-  @Deprecated
-  public static @NotNull Color getTableUnfocusedSelectionBackground() {
-    return getTableSelectionBackground(false);
-  }
-
   // foreground
 
   /**
@@ -3407,7 +3309,7 @@ public final class UIUtil {
    * @deprecated use {@link JreHiDpiUtil#isJreHiDPI(Graphics2D)}
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
   public static boolean isJreHiDPI(@Nullable Graphics2D g) {
     return JreHiDpiUtil.isJreHiDPI(g);
   }
@@ -3417,7 +3319,7 @@ public final class UIUtil {
    */
   @SuppressWarnings("SpellCheckingInspection")
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
   public static @NotNull Color getPanelBackgound() {
     return getPanelBackground();
   }

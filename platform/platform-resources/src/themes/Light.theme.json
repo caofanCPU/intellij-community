@@ -117,8 +117,11 @@
 
     "Popup": {
       "separatorColor": "lightBorder",
-      "Advertiser.borderColor": "border",
-      "borderColor": "windowsPopupBorder"
+      "borderColor": "windowsPopupBorder",
+      "Advertiser": {
+        "borderColor": "border",
+        "foreground": "infoPanelForeground"
+      }
     },
 
     "ProgressBar": {
@@ -127,6 +130,32 @@
       "indeterminateStartColor": "#91C5F2",
       "indeterminateEndColor": "#1E82E6"
     },
+
+    "AvailableMnemonic": {
+      "foreground": "#000000",
+      "background": "#FFFFFF",
+      "borderColor": "#C4C4C4"
+    },
+    "AssignedMnemonic": {
+      "foreground": "#000000",
+      "background": "#F7C777",
+      "borderColor": "#F7C777"
+    },
+    "CurrentMnemonic": {
+      "foreground": "#FFFFFF",
+      "background": "#389FD6",
+      "borderColor": "#389FD6"
+    },
+    "BookmarkIcon": {
+      "background": "#F7C777"
+    },
+    "MnemonicIcon": {
+      "foreground": "#000000",
+      "background": "#FEF7EC",
+      "borderColor": "#F4AF3D"
+    },
+
+    "SearchEverywhere.Advertiser.foreground": "infoPanelForeground",
 
     "StatusBar.borderColor": "border",
 

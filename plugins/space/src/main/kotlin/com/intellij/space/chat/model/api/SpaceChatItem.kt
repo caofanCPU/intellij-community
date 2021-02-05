@@ -1,8 +1,8 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.chat.model.api
 
+import circlet.client.api.AttachmentInfo
 import circlet.client.api.CPrincipal
-import circlet.client.api.M2ItemContentDetails
 import circlet.m2.M2MessageEditingVm
 import circlet.m2.channel.M2ChannelVm
 import circlet.platform.api.KDateTime
@@ -11,7 +11,7 @@ import com.intellij.openapi.util.NlsSafe
 import com.intellij.util.ui.codereview.timeline.TimelineItem
 import runtime.reactive.MutableProperty
 
-interface SpaceChatItem : TimelineItem {
+internal interface SpaceChatItem : TimelineItem {
   val id: TID
 
   val chat: M2ChannelVm
@@ -22,7 +22,7 @@ interface SpaceChatItem : TimelineItem {
 
   val created: KDateTime
 
-  val details: M2ItemContentDetails?
+  val type: SpaceChatItemType
 
   val thread: M2ChannelVm?
 
@@ -40,7 +40,13 @@ interface SpaceChatItem : TimelineItem {
 
   val canEdit: Boolean
 
+  val startThreadVm: SpaceChatStartThreadVm
+
   val pending: Boolean?
+
+  val attachments: List<AttachmentInfo>
+
+  val additionalFeatures: Set<SpaceChatItemAdditionalFeature>
 
   fun startEditing()
 

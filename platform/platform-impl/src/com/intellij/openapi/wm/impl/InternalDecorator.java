@@ -33,7 +33,6 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -183,15 +182,7 @@ public final class InternalDecorator extends JPanel implements Queryable, DataPr
     return super.processKeyBinding(ks, e, condition, pressed);
   }
 
-  /**
-   * @deprecated Use {@link #setTitleActions(List)}
-   */
-  @Deprecated
-  public void setTitleActions(@NotNull AnAction @NotNull [] actions) {
-    header.setAdditionalTitleActions(Arrays.asList(actions));
-  }
-
-  public void setTitleActions(@NotNull List<AnAction> actions) {
+  public void setTitleActions(@NotNull List<? extends AnAction> actions) {
     header.setAdditionalTitleActions(actions);
   }
 
@@ -297,6 +288,19 @@ public final class InternalDecorator extends JPanel implements Queryable, DataPr
 
   public boolean isHeaderVisible() {
     return header.isVisible();
+  }
+
+  public boolean isActive() {
+    return toolWindow.isActive();
+  }
+
+  public void activate(ToolWindowEventSource source) {
+    toolWindow.fireActivated(source);
+  }
+
+  @NotNull
+  public String getToolWindowId() {
+    return toolWindow.getId();
   }
 
   @Override
@@ -410,7 +414,7 @@ public final class InternalDecorator extends JPanel implements Queryable, DataPr
   }
 
   @Override
-  public void putInfo(@NotNull Map<String, String> info) {
+  public void putInfo(@NotNull Map<? super String, ? super String> info) {
     info.put("toolWindowTitle", toolWindow.getTitle());
 
     Content selection = toolWindow.getContentManager().getSelectedContent();

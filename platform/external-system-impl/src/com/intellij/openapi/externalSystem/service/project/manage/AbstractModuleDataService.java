@@ -79,7 +79,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
     ExtensionPointName.create("com.intellij.externalSystem.moduleDataServiceExtension");
 
   @Override
-  public void importData(@NotNull final Collection<DataNode<E>> toImport,
+  public void importData(final @NotNull Collection<? extends DataNode<E>> toImport,
                          @Nullable ProjectData projectData,
                          @NotNull final Project project,
                          @NotNull IdeModifiableModelsProvider modelsProvider) {
@@ -101,7 +101,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
         }
         String productionModuleId = node.getData().getProductionModuleId();
         modelsProvider.setTestModuleProperties(module, productionModuleId);
-        setModuleOptions(module, node, modelsProvider);
+        setModuleOptions(module, node);
         ModifiableRootModel modifiableRootModel = modelsProvider.getModifiableRootModel(module);
         syncPaths(module, modifiableRootModel, node.getData());
 
@@ -135,7 +135,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
       // Ensure that the dependencies are clear (used to be not clear when manually removing the module and importing it via external system)
       final ModifiableRootModel modifiableRootModel = modelsProvider.getModifiableRootModel(created);
 
-      RootPolicy<Object> visitor = new RootPolicy<Object>() {
+      RootPolicy<Object> visitor = new RootPolicy<>() {
         @Override
         public Object visitLibraryOrderEntry(@NotNull LibraryOrderEntry libraryOrderEntry, Object value) {
           modifiableRootModel.removeOrderEntry(libraryOrderEntry);
@@ -185,7 +185,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
       .filter(module -> !ExternalSystemApiUtil.isExternalSystemAwareModule(projectSystemId, module))
       .forEach(module -> {
         ExternalSystemModulePropertyManager.getInstance(module)
-          .setExternalOptions(projectSystemId, moduleData, node.getData(ProjectKeys.PROJECT), modelsProvider);
+          .setExternalOptions(projectSystemId, moduleData, node.getData(ProjectKeys.PROJECT));
       });
 
   }
@@ -215,12 +215,12 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
   }
 
   @Override
-  public void removeData(@NotNull final Computable<Collection<Module>> toRemoveComputable,
-                         @NotNull final Collection<DataNode<E>> toIgnore,
+  public void removeData(Computable<? extends Collection<? extends Module>> toRemoveComputable,
+                         final @NotNull Collection<? extends DataNode<E>> toIgnore,
                          @NotNull final ProjectData projectData,
                          @NotNull final Project project,
                          @NotNull final IdeModifiableModelsProvider modelsProvider) {
-    final Collection<Module> toRemove = toRemoveComputable.compute();
+    final Collection<? extends Module> toRemove = toRemoveComputable.compute();
     final List<Module> modules = new SmartList<>(toRemove);
     for (DataNode<E> moduleDataNode : toIgnore) {
       final Module module = modelsProvider.findIdeModule(moduleDataNode.getData());
@@ -417,15 +417,15 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
     ExternalSystemModulePropertyManager.getInstance(module).unlinkExternalOptions();
   }
 
-  protected void setModuleOptions(Module module, DataNode<E> moduleDataNode, IdeModifiableModelsProvider modelsProvider) {
+  protected void setModuleOptions(Module module, DataNode<E> moduleDataNode) {
     ModuleData moduleData = moduleDataNode.getData();
     module.putUserData(MODULE_DATA_KEY, moduleData);
     ExternalSystemModulePropertyManager.getInstance(module)
-      .setExternalOptions(moduleData.getOwner(), moduleData, moduleDataNode.getData(ProjectKeys.PROJECT), modelsProvider);
+      .setExternalOptions(moduleData.getOwner(), moduleData, moduleDataNode.getData(ProjectKeys.PROJECT));
   }
 
   @Override
-  public void postProcess(@NotNull Collection<DataNode<E>> toImport,
+  public void postProcess(@NotNull Collection<? extends DataNode<E>> toImport,
                           @Nullable ProjectData projectData,
                           @NotNull Project project,
                           @NotNull IdeModifiableModelsProvider modelsProvider) {
@@ -471,7 +471,7 @@ public abstract class AbstractModuleDataService<E extends ModuleData> extends Ab
       }
     }
 
-    noOrderAwareItems.sort(new Comparator<OrderEntry>() {
+    noOrderAwareItems.sort(new Comparator<>() {
       @Override
       public int compare(OrderEntry o1, OrderEntry o2) {
         return o1.toString().compareTo(o2.toString());

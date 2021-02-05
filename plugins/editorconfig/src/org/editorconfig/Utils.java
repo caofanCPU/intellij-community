@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.editorconfig;
 
 import com.intellij.BundleBase;
@@ -36,9 +36,11 @@ import org.jetbrains.annotations.TestOnly;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class Utils {
@@ -62,7 +64,9 @@ public final class Utils {
   }
 
   public static boolean isEnabled(CodeStyleSettings currentSettings) {
-    return currentSettings != null && currentSettings.getCustomSettings(EditorConfigSettings.class).ENABLED;
+    if (currentSettings == null) return false;
+    EditorConfigSettings settings = currentSettings.getCustomSettingsIfCreated(EditorConfigSettings.class);
+    return settings != null && settings.ENABLED;
   }
 
   public static boolean isEnabled(@NotNull Project project) {
@@ -181,13 +185,8 @@ public final class Utils {
 
   @Nullable
   public static String getEncoding(@NotNull Project project) {
-    final Charset charset = EncodingProjectManager.getInstance(project).getDefaultCharset();
-    for (Map.Entry<String, Charset> entry : ConfigEncodingManager.encodingMap.entrySet()) {
-      if (entry.getValue() == charset) {
-        return entry.getKey();
-      }
-    }
-    return null;
+    EncodingProjectManager encodingManager = EncodingProjectManager.getInstance(project);
+    return ConfigEncodingManager.toString(encodingManager.getDefaultCharset(), encodingManager.shouldAddBOMForNewUtf8File());
   }
 
   @NotNull
@@ -268,5 +267,13 @@ public final class Utils {
       }
     }
     return files;
+  }
+
+  public static boolean isApplicableTo(@NotNull VirtualFile virtualFile) {
+    return virtualFile.isInLocalFileSystem() && virtualFile.isValid();
+  }
+
+  public static boolean isEditorConfigFile(@NotNull VirtualFile virtualFile) {
+    return EDITOR_CONFIG_FILE_NAME.equalsIgnoreCase(virtualFile.getName());
   }
 }

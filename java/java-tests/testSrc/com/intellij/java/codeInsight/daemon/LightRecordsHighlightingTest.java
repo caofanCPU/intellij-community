@@ -20,32 +20,26 @@ public class LightRecordsHighlightingTest extends LightJavaCodeInsightFixtureTes
   @NotNull
   @Override
   protected LightProjectDescriptor getProjectDescriptor() {
-    return JAVA_14;
+    return JAVA_15;
   }
 
   public void testRecordBasics() {
     doTest();
   }
-  public void testRecordBasicsJava15() {
-    IdeaTestUtil.withLevel(getModule(), LanguageLevel.JDK_15_PREVIEW, this::doTest);
+  public void testRecordBasicsJava16() {
+    IdeaTestUtil.withLevel(getModule(), LanguageLevel.JDK_16, this::doTest);
   }
   public void testRecordAccessors() {
     doTest();
-  }
-  public void testRecordAccessorsJava15() {
-    IdeaTestUtil.withLevel(getModule(), LanguageLevel.JDK_15_PREVIEW, this::doTest);
   }
   public void testRecordConstructors() {
     doTest();
   }
   public void testRecordConstructorAccessJava15() {
-    IdeaTestUtil.withLevel(getModule(), LanguageLevel.JDK_15_PREVIEW, this::doTest);
+    doTest();
   }
   public void testRecordCompactConstructors() {
     doTest();
-  }
-  public void testRecordCompactConstructorsJava15() {
-    IdeaTestUtil.withLevel(getModule(), LanguageLevel.JDK_15_PREVIEW, this::doTest);
   }
   public void testLocalRecords() {
     doTest();

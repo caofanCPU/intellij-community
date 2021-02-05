@@ -1,8 +1,10 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.workspaceModel.storage.bridgeEntities
 
+import com.intellij.openapi.diagnostic.debug
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.workspaceModel.storage.EntitySource
-import com.intellij.workspaceModel.storage.url.VirtualFileUrl
+import com.intellij.workspaceModel.storage.WorkspaceEntityStorage
 import com.intellij.workspaceModel.storage.WorkspaceEntityStorageDiffBuilder
 import com.intellij.workspaceModel.storage.impl.EntityDataDelegation
 import com.intellij.workspaceModel.storage.impl.ModifiableWorkspaceEntityBase
@@ -14,6 +16,9 @@ import com.intellij.workspaceModel.storage.impl.references.MutableManyToOne
 import com.intellij.workspaceModel.storage.impl.references.MutableOneToAbstractMany
 import com.intellij.workspaceModel.storage.impl.references.MutableOneToAbstractOneChild
 import com.intellij.workspaceModel.storage.impl.references.MutableOneToOneChild
+import com.intellij.workspaceModel.storage.url.VirtualFileUrl
+
+private val LOG = logger<WorkspaceEntityStorage>()
 
 class ModifiableModuleEntity : ModifiableWorkspaceEntityBase<ModuleEntity>() {
   var name: String by EntityDataDelegation()
@@ -22,11 +27,13 @@ class ModifiableModuleEntity : ModifiableWorkspaceEntityBase<ModuleEntity>() {
 }
 
 fun WorkspaceEntityStorageDiffBuilder.addModuleEntity(name: String, dependencies: List<ModuleDependencyItem>, source: EntitySource,
-                                                      type: String? = null) = addEntity(
-  ModifiableModuleEntity::class.java, source) {
-  this.name = name
-  this.type = type
-  this.dependencies = dependencies
+                                                      type: String? = null): ModuleEntity {
+  LOG.debug { "Add moduleEntity: $name" }
+  return addEntity(ModifiableModuleEntity::class.java, source) {
+    this.name = name
+    this.type = type
+    this.dependencies = dependencies
+  }
 }
 
 class ModifiableJavaModuleSettingsEntity : ModifiableWorkspaceEntityBase<JavaModuleSettingsEntity>() {
@@ -315,10 +322,13 @@ class ModifiableDirectoryPackagingElementEntity : ModifiableWorkspaceEntityBase<
 }
 
 fun WorkspaceEntityStorageDiffBuilder.addDirectoryPackagingElementEntity(directoryName: String,
-                                                                         children: MutableList<PackagingElementEntity>,
-                                                                         source: EntitySource) = addEntity(
-  ModifiableDirectoryPackagingElementEntity::class.java,
-  source) { this.directoryName = directoryName; this.children = children.asSequence() }
+                                                                         children: List<PackagingElementEntity>,
+                                                                         source: EntitySource): DirectoryPackagingElementEntity {
+  return addEntity(ModifiableDirectoryPackagingElementEntity::class.java, source) {
+    this.directoryName = directoryName
+    this.children = children.asSequence()
+  }
+}
 
 class ModifiableArchivePackagingElementEntity : ModifiableWorkspaceEntityBase<ArchivePackagingElementEntity>() {
   var fileName: String by EntityDataDelegation()
@@ -327,9 +337,13 @@ class ModifiableArchivePackagingElementEntity : ModifiableWorkspaceEntityBase<Ar
 }
 
 fun WorkspaceEntityStorageDiffBuilder.addArchivePackagingElementEntity(fileName: String,
-                                                                       children: MutableList<PackagingElementEntity>,
-                                                                       source: EntitySource) = addEntity(
-  ModifiableArchivePackagingElementEntity::class.java, source) { this.fileName = fileName; this.children = children.asSequence() }
+                                                                       children: List<PackagingElementEntity>,
+                                                                       source: EntitySource): ArchivePackagingElementEntity {
+  return addEntity(ModifiableArchivePackagingElementEntity::class.java, source) {
+    this.fileName = fileName
+    this.children = children.asSequence()
+  }
+}
 
 class ModifiableArtifactOutputPackagingElementEntity : ModifiableWorkspaceEntityBase<ArtifactOutputPackagingElementEntity>() {
   var artifact: ArtifactId by EntityDataDelegation()

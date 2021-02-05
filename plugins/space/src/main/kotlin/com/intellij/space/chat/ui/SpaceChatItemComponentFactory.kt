@@ -1,36 +1,32 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.chat.ui
 
-import circlet.client.api.M2TextItemContent
-import circlet.client.api.mc.MCMessage
-import circlet.code.api.*
+import circlet.code.api.ReviewerChangedType
 import circlet.platform.client.resolve
-import circlet.platform.client.resolveAll
 import circlet.principals.asUser
 import com.intellij.icons.AllIcons
-import com.intellij.ide.BrowserUtil
 import com.intellij.ide.plugins.newui.VerticalLayout
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.openapi.util.text.HtmlChunk.html
 import com.intellij.space.chat.model.api.SpaceChatItem
+import com.intellij.space.chat.model.api.SpaceChatItemType.*
 import com.intellij.space.chat.ui.discussion.SpaceChatCodeDiscussionComponentFactory
 import com.intellij.space.chat.ui.message.MessageTitleComponent
 import com.intellij.space.chat.ui.message.SpaceChatMessagePendingHeader
+import com.intellij.space.chat.ui.message.SpaceMCMessageComponent
+import com.intellij.space.chat.ui.message.SpaceStyledMessageComponent
 import com.intellij.space.chat.ui.thread.SpaceChatReplyActionFactory
 import com.intellij.space.chat.ui.thread.createThreadComponent
 import com.intellij.space.components.SpaceWorkspaceComponent
 import com.intellij.space.messages.SpaceBundle
 import com.intellij.space.ui.SpaceAvatarProvider
 import com.intellij.space.ui.resizeIcon
-import com.intellij.space.utils.SpaceUrls
-import com.intellij.space.vcs.review.HtmlEditorPane
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.labels.LinkLabel
-import com.intellij.ui.components.labels.LinkListener
+import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UI
 import com.intellij.util.ui.codereview.SingleValueModelImpl
 import com.intellij.util.ui.codereview.ToggleableContainer
 import com.intellij.util.ui.codereview.timeline.TimelineItemComponentFactory
@@ -38,12 +34,11 @@ import com.intellij.util.ui.codereview.timeline.comment.SubmittableTextField
 import com.intellij.util.ui.codereview.timeline.comment.SubmittableTextFieldModelBase
 import com.intellij.util.ui.components.BorderLayoutPanel
 import icons.SpaceIcons
+import icons.VcsCodeReviewIcons
 import libraries.coroutines.extra.Lifetime
 import libraries.coroutines.extra.launch
-import org.jetbrains.annotations.Nls
 import runtime.Ui
 import runtime.reactive.awaitLoaded
-import java.awt.*
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -67,116 +62,82 @@ internal class SpaceChatItemComponentFactory(
    */
   override fun createComponent(item: SpaceChatItem): HoverableJPanel {
     val component =
-      when (val details = item.details) {
-        is CodeDiscussionAddedFeedEvent ->
-          codeDiscussionComponentFactory.createComponent(details, item.thread!!) ?: createUnsupportedMessageTypePanel(item.link)
-        is M2TextItemContent -> {
-          val messagePanel = createSimpleMessageComponent(item)
-          val thread = item.thread
-          if (thread == null) {
-            messagePanel
-          }
-          else {
-            val threadComponent = createThreadComponent(project, lifetime, thread, replyActionFactory)
-            JPanel(VerticalLayout(0)).apply {
-              isOpaque = false
-              add(messagePanel, VerticalLayout.FILL_HORIZONTAL)
-              add(threadComponent, VerticalLayout.FILL_HORIZONTAL)
-            }
-          }
-        }
-        is ReviewRevisionsChangedEvent -> {
-          val review = details.review?.resolve()
-          if (review == null) {
-            EventMessagePanel(createSimpleMessageComponent(item))
-          }
-          else {
-            details.createComponent(review)
-          }
-        }
-        is ReviewCompletionStateChangedEvent -> EventMessagePanel(createSimpleMessageComponent(item))
-        is ReviewerChangedEvent -> {
-          val user = details.uid.resolve().link()
-          val text = when (details.changeType) {
+      when (val type = item.type) {
+        is CodeDiscussion ->
+          codeDiscussionComponentFactory.createComponent(type.discussion, item.thread!!) ?: createUnsupportedMessageTypePanel(item.link)
+        is SimpleText -> createSimpleMessageComponent(item)
+        is ReviewCompletionStateChanged -> SpaceStyledMessageComponent(createSimpleMessageComponent(item))
+        is ReviewerChanged -> {
+          val user = type.uid.resolve().link()
+          val text = when (type.changeType) {
             ReviewerChangedType.Joined -> SpaceBundle.message("chat.reviewer.added", user)
             ReviewerChangedType.Left -> SpaceBundle.message("chat.reviewer.removed", user)
           }
-          EventMessagePanel(createSimpleMessageComponent(text))
+          SpaceStyledMessageComponent(SpaceChatMarkdownTextComponent(server, text))
         }
-        is MergeRequestMergedEvent -> EventMessagePanel(
-          createSimpleMessageComponent(
+        is MergeRequestMerged -> SpaceStyledMessageComponent(
+          SpaceChatMarkdownTextComponent(
+            server,
             HtmlChunk.raw(
               SpaceBundle.message(
                 "chat.review.merged",
-                HtmlChunk.text(details.sourceBranch).bold(), // NON-NLS
-                HtmlChunk.text(details.targetBranch).bold() // NON-NLS
+                HtmlChunk.text(type.sourceBranch).bold(), // NON-NLS
+                HtmlChunk.text(type.targetBranch).bold() // NON-NLS
               )
             ).wrapWith(html()).toString()
           )
         )
-        is MergeRequestBranchDeletedEvent -> EventMessagePanel(
-          createSimpleMessageComponent(
+        is MergeRequestBranchDeleted -> SpaceStyledMessageComponent(
+          SpaceChatMarkdownTextComponent(
+            server,
             HtmlChunk.raw(
-              SpaceBundle.message("chat.review.deleted.branch", HtmlChunk.text(details.branch).bold()) // NON-NLS
+              SpaceBundle.message("chat.review.deleted.branch", HtmlChunk.text(type.branch).bold()) // NON-NLS
             ).wrapWith(html()).toString()
           )
         )
-        is ReviewTitleChangedEvent -> EventMessagePanel(
-          createSimpleMessageComponent(
+        is ReviewTitleChanged -> SpaceStyledMessageComponent(
+          SpaceChatMarkdownTextComponent(
+            server,
             HtmlChunk.raw(
               SpaceBundle.message(
                 "chat.review.title.changed",
-                HtmlChunk.text(details.oldTitle).bold(), // NON-NLS
-                HtmlChunk.text(details.newTitle).bold()  // NON-NLS
+                HtmlChunk.text(type.oldTitle).bold(), // NON-NLS
+                HtmlChunk.text(type.newTitle).bold()  // NON-NLS
               )
             ).wrapWith(html()).toString()
           )
         )
-        is MCMessage -> EventMessagePanel(createSimpleMessageComponent(item.text))
-        else -> createUnsupportedMessageTypePanel(item.link)
+        is MCMessage -> SpaceMCMessageComponent(server, type.content, item.attachments)
+        is Deleted -> SpaceChatMarkdownTextComponent(server, getGrayTextHtml(SpaceBundle.message("chat.message.removed.text")))
+        is Unknown -> createUnsupportedMessageTypePanel(item.link)
       }
     return Item(
-      item.author.asUser?.let { user -> avatarProvider.getIcon(user) } ?: resizeIcon(SpaceIcons.Main, avatarProvider.iconSize.get()),
-      MessageTitleComponent(lifetime, item),
+      createAvatarIcon(item),
+      createTitleComponent(item),
       SpaceChatMessagePendingHeader(item),
-      createEditableContent(component, item)
+      createEditableContent(component.addThreadComponentIfNeeded(item).addStartThreadField(item), item)
     )
   }
 
-  private fun ReviewRevisionsChangedEvent.createComponent(review: CodeReviewRecord): JComponent {
-    val commitsCount = commits.size
-    @Nls val text = when (changeType) {
-      ReviewRevisionsChangedType.Created -> SpaceBundle.message("chat.code.review.created.message", commitsCount)
-      ReviewRevisionsChangedType.Added -> SpaceBundle.message("chat.commits.added.message", commitsCount)
-      ReviewRevisionsChangedType.Removed -> SpaceBundle.message("chat.commits.removed.message", commitsCount)
+  private fun createTitleComponent(item: SpaceChatItem): MessageTitleComponent? {
+    if (item.type == Deleted) {
+      return null
     }
-
-    val message = createSimpleMessageComponent(text)
-
-    val content = JPanel(VerticalLayout(JBUI.scale(5))).apply {
-      isOpaque = false
-      add(message)
-      commits.resolveAll().forEach { commit ->
-        val location = when (changeType) {
-          ReviewRevisionsChangedType.Removed -> {
-            SpaceUrls.revision(review.project, commit.repositoryName, commit.revision)
-          }
-          else -> {
-            SpaceUrls.reviewFiles(review.project, review.number, listOf(commit.revision))
-          }
-        }
-        add(LinkLabel<Any?>(
-          commit.message?.let { getCommitMessageSubject(it) } ?: SpaceBundle.message("chat.untitled.commit.label"), // NON-NLS
-          AllIcons.Vcs.CommitNode,
-          LinkListener { _, _ ->
-            BrowserUtil.browse(location)
-          }
-        ))
-      }
-    }
-
-    return EventMessagePanel(content)
+    return MessageTitleComponent(lifetime, item)
   }
+
+  private fun createAvatarIcon(item: SpaceChatItem): Icon {
+    val user = item.author.asUser
+    if (user != null) {
+      return avatarProvider.getIcon(user)
+    }
+    if (item.type == Deleted) {
+      return resizeIcon(VcsCodeReviewIcons.Delete)
+    }
+    return resizeIcon(SpaceIcons.Main)
+  }
+
+  private fun resizeIcon(icon: Icon) = resizeIcon(icon, avatarProvider.iconSize.get())
 
   private fun createUnsupportedMessageTypePanel(messageLink: String?): JComponent {
     val description = if (messageLink != null) {
@@ -186,6 +147,63 @@ internal class SpaceChatItemComponentFactory(
       SpaceBundle.message("chat.unsupported.message.type")
     }
     return JBLabel(description, AllIcons.General.Warning, SwingConstants.LEFT).setCopyable(true)
+  }
+
+  private fun JComponent.addThreadComponentIfNeeded(message: SpaceChatItem): JComponent {
+    val thread = message.thread
+    return if (thread == null || message.type is CodeDiscussion) {
+      this
+    }
+    else {
+      val threadComponent = createThreadComponent(project, lifetime, thread, replyActionFactory)
+      JPanel(VerticalLayout(0)).apply {
+        isOpaque = false
+        add(this@addThreadComponentIfNeeded, VerticalLayout.FILL_HORIZONTAL)
+        add(threadComponent, VerticalLayout.FILL_HORIZONTAL)
+      }
+    }
+  }
+
+  private fun JComponent.addStartThreadField(message: SpaceChatItem): JComponent {
+    val startThreadVm = message.startThreadVm
+
+    val isWritingFirstMessageModel = SingleValueModelImpl(false)
+    startThreadVm.isWritingFirstMessage.forEach(lifetime) {
+      isWritingFirstMessageModel.value = it
+    }
+    val emptyPanel = JPanel().apply {
+      isOpaque = false
+      border = JBUI.Borders.empty()
+    }
+    val firstThreadMessageField = ToggleableContainer.create(isWritingFirstMessageModel, { emptyPanel }, {
+      val submittableModel = object : SubmittableTextFieldModelBase("") {
+        override fun submit() {
+          isBusy = true
+          launch(lifetime, Ui) {
+            startThreadVm.startThread(document.text)
+            // keep model busy because message will be fully redrawn with new thread
+            // or hidden if thread already is existed
+          }
+        }
+      }
+      val newMessageComponent = SpaceChatNewMessageWithAvatarComponent(
+        lifetime,
+        SpaceChatAvatarType.THREAD,
+        submittableModel,
+        onCancel = { startThreadVm.stopWritingFirstMessage() }
+      )
+      BorderLayoutPanel().apply {
+        isOpaque = false
+        border = JBUI.Borders.emptyTop(10)
+        addToCenter(newMessageComponent)
+      }
+    })
+    return JPanel(VerticalLayout(0)).apply {
+      isOpaque = false
+      border = JBUI.Borders.empty()
+      add(this@addStartThreadField, VerticalLayout.FILL_HORIZONTAL)
+      add(firstThreadMessageField, VerticalLayout.FILL_HORIZONTAL)
+    }
   }
 
   private fun createEditableContent(content: JComponent, message: SpaceChatItem): JComponent {
@@ -226,52 +244,18 @@ internal class SpaceChatItemComponentFactory(
     })
   }
 
-  private fun createSimpleMessageComponent(message: SpaceChatItem): HtmlEditorPane =
-    createSimpleMessageComponent(message.text, message.isEdited)
-
-  private fun createSimpleMessageComponent(@Nls text: String, isEdited: Boolean = false): HtmlEditorPane = HtmlEditorPane().apply {
-    setBody(processItemText(server, text, isEdited))
-  }
-
-  private class EventMessagePanel(content: JComponent) : BorderLayoutPanel() {
-    private val lineColor = Color(22, 125, 255, 51)
-
-    private val lineWidth
-      get() = JBUI.scale(6)
-    private val lineCenterX
-      get() = lineWidth / 2
-    private val yRoundOffset
-      get() = lineWidth / 2
-
-    init {
-      addToCenter(content)
-      isOpaque = false
-      border = JBUI.Borders.empty(yRoundOffset, 15, yRoundOffset, 0)
-    }
-
-    override fun paint(g: Graphics?) {
-      super.paint(g)
-
-      with(g as Graphics2D) {
-        setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-
-        color = lineColor
-        stroke = BasicStroke(lineWidth.toFloat() / 2 + 1, BasicStroke.CAP_ROUND, BasicStroke.JOIN_BEVEL)
-
-        drawLine(lineCenterX, yRoundOffset, lineCenterX, height - yRoundOffset)
-      }
-    }
-  }
+  private fun createSimpleMessageComponent(message: SpaceChatItem): SpaceChatMarkdownTextComponent =
+    SpaceChatMarkdownTextComponent(server, message.text, message.isEdited)
 
   internal class Item(
     avatar: Icon,
-    private val title: MessageTitleComponent,
+    private val title: MessageTitleComponent?,
     header: JComponent,
     content: JComponent
   ) : HoverableJPanel() {
     companion object {
       val AVATAR_GAP: Int
-        get() = UI.scale(8)
+        get() = JBUIScale.scale(8)
     }
 
     init {
@@ -289,8 +273,15 @@ internal class SpaceChatItemComponentFactory(
       val rightPart = JPanel(VerticalLayout(JBUI.scale(5))).apply {
         isOpaque = false
         border = JBUI.Borders.emptyLeft(AVATAR_GAP)
-        add(title, VerticalLayout.FILL_HORIZONTAL)
-        add(content, VerticalLayout.FILL_HORIZONTAL)
+        title?.let { add(it, VerticalLayout.FILL_HORIZONTAL) }
+        val contentWrapper = BorderLayoutPanel().apply {
+          isOpaque = false
+          if (title == null) {
+            border = JBUI.Borders.emptyTop(avatar.iconHeight / 4)
+          }
+          addToCenter(content)
+        }
+        add(contentWrapper, VerticalLayout.FILL_HORIZONTAL)
       }
       val messagePanel = BorderLayoutPanel().apply {
         isOpaque = false
@@ -300,7 +291,7 @@ internal class SpaceChatItemComponentFactory(
 
       layout = VerticalLayout(JBUI.scale(3))
       isOpaque = false
-      border = JBUI.Borders.empty(10, 0)
+      border = JBUI.Borders.emptyTop(15)
 
       add(headerPart, VerticalLayout.FILL_HORIZONTAL)
       add(messagePanel, VerticalLayout.FILL_HORIZONTAL)
@@ -309,6 +300,7 @@ internal class SpaceChatItemComponentFactory(
     private fun userAvatar(avatar: Icon) = LinkLabel<Any>("", avatar)
 
     override fun hoverStateChanged(isHovered: Boolean) {
+      title ?: return
       title.actionsPanel.isVisible = isHovered
       title.revalidate()
       title.repaint()

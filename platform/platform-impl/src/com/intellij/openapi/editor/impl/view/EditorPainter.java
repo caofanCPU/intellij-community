@@ -86,7 +86,7 @@ public final class EditorPainter implements TextDrawingCallback {
   }
 
   @Override
-  public void drawChars(@NotNull Graphics g, char @NotNull [] data, int start, int end, int x, int y, Color color, FontInfo fontInfo) {
+  public void drawChars(@NotNull Graphics g, char @NotNull [] data, int start, int end, int x, int y, @NotNull Color color, @NotNull FontInfo fontInfo) {
     g.setFont(fontInfo.getFont());
     g.setColor(color);
     g.drawChars(data, start, end - start, x, y);
@@ -1211,7 +1211,7 @@ public final class EditorPainter implements TextDrawingCallback {
     @NotNull
     private TextAttributes getBetweenLinesAttributes(int bottomVisualLine,
                                                      int bottomVisualLineStartOffset,
-                                                     PeekableIterator<Caret> caretIterator) {
+                                                     PeekableIterator<? extends Caret> caretIterator) {
       boolean selection = false;
       while (caretIterator.hasNext() && caretIterator.peek().getSelectionEnd() < bottomVisualLineStartOffset) caretIterator.next();
       if (caretIterator.hasNext()) {

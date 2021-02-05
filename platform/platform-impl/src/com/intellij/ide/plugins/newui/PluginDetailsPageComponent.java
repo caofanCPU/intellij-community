@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins.newui;
 
 import com.intellij.execution.process.ProcessIOExecutorService;
@@ -46,6 +46,7 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
@@ -82,7 +83,7 @@ public class PluginDetailsPageComponent extends MultiPanel {
   private JLabel myRating;
   private JLabel myDownloads;
   private JLabel mySize;
-  private LinkPanel myVendor;
+  private LinkPanel myAuthor;
   private final LicensePanel myLicensePanel = new LicensePanel(false);
   private LinkPanel myHomePage;
   private JBScrollPane myBottomScrollPane;
@@ -164,15 +165,6 @@ public class PluginDetailsPageComponent extends MultiPanel {
     myIconLabel.setOpaque(false);
     header.add(myIconLabel, BorderLayout.WEST);
 
-    myGearButton = SelectionBasedPluginModelAction.createGearButton(
-      this::createEnableDisableAction,
-      () -> createUninstallAction()
-    );
-    myGearButton.setBorder(JBUI.Borders.emptyLeft(5));
-    myGearButton.setBackground(PluginManagerConfigurable.MAIN_BG_COLOR);
-    myGearButton.setOpaque(false);
-    header.add(myGearButton, BorderLayout.EAST);
-
     return header;
   }
 
@@ -246,6 +238,13 @@ public class PluginDetailsPageComponent extends MultiPanel {
     myInstallButton
       .addActionListener(e -> myPluginModel.installOrUpdatePlugin(this, myPlugin, null, ModalityState.stateForComponent(myInstallButton)));
 
+    myGearButton = SelectionBasedPluginModelAction.createGearButton(
+      this::createEnableDisableAction,
+      () -> createUninstallAction()
+    );
+    myGearButton.setOpaque(false);
+    myNameAndButtons.addButtonComponent(myGearButton);
+
     for (Component component : myNameAndButtons.getButtonComponents()) {
       component.setBackground(PluginManagerConfigurable.MAIN_BG_COLOR);
     }
@@ -253,7 +252,6 @@ public class PluginDetailsPageComponent extends MultiPanel {
 
   public void setOnlyUpdateMode() {
     myNameAndButtons.removeButtons();
-    myGearButton.getParent().remove(myGearButton);
     myEnabledForProject.getParent().remove(myEnabledForProject);
     myPanel.setBorder(JBUI.Borders.empty(15, 20, 0, 0));
     myEmptyPanel.setBorder(null);
@@ -290,9 +288,10 @@ public class PluginDetailsPageComponent extends MultiPanel {
       myRating =
         ListPluginComponent.createRatingLabel(panel1, null, "", AllIcons.Plugins.Rating, ListPluginComponent.GRAY_COLOR, true);
     }
-    myVendor = new LinkPanel(panel1, false, true, null, TextHorizontalLayout.FIX_LABEL);
+    myAuthor = new LinkPanel(panel1, false, true, null, TextHorizontalLayout.FIX_LABEL);
 
     myEnabledForProject = new JLabel();
+    myEnabledForProject.add(createDescriptionComponent(null));
     myEnabledForProject.setHorizontalTextPosition(SwingConstants.LEFT);
     myEnabledForProject.setForeground(ListPluginComponent.GRAY_COLOR);
     setFont(myEnabledForProject);
@@ -408,7 +407,7 @@ public class PluginDetailsPageComponent extends MultiPanel {
 
     StyleSheet sheet = kit.getStyleSheet();
     sheet.addRule("ul { margin-left-ltr: 30; margin-right-rtl: 30; }");
-    sheet.addRule("a { color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.linkColor()) + "; }");
+    sheet.addRule("a { color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.Foreground.ENABLED) + "; }");
     sheet.addRule("h4 { font-weight: bold; }");
     sheet.addRule("strong { font-weight: bold; }");
     sheet.addRule("p { margin-bottom: 6px; }");
@@ -554,13 +553,20 @@ public class PluginDetailsPageComponent extends MultiPanel {
     }
 
     String vendor = myPlugin.isBundled() ? null : StringUtil.trim(myPlugin.getVendor());
+    String organization = myPlugin.isBundled() ? null : StringUtil.trim(myPlugin.getOrganization());
     if (StringUtil.isEmptyOrSpaces(vendor)) {
-      myVendor.hide();
+      myAuthor.hide();
     }
     else {
-      myVendor.show(vendor, () -> mySearchListener
-        .linkSelected(null,
-                      SearchWords.ORGANIZATION.getValue() + (vendor.indexOf(' ') == -1 ? vendor : StringUtil.wrapWithDoubleQuote(vendor))));
+      if (StringUtil.isEmptyOrSpaces(organization)) {
+        myAuthor.show(vendor, null);
+      } else {
+        myAuthor.show(organization, () -> mySearchListener.linkSelected(
+          null,
+          SearchWords.ORGANIZATION.getValue() +
+          (organization.indexOf(' ') == -1 ? organization : StringUtil.wrapWithDoubleQuote(organization))
+        ));
+      }
     }
 
     showLicensePanel();
@@ -612,6 +618,7 @@ public class PluginDetailsPageComponent extends MultiPanel {
       if (marketplacePlugins != null) {
         return marketplacePlugins.contains(myPlugin.getPluginId().getIdString());
       }
+
       // will get the marketplace plugins ids next time
       ApplicationManager.getApplication().executeOnPooledThread(() -> {
         try {
@@ -804,7 +811,7 @@ public class PluginDetailsPageComponent extends MultiPanel {
   }
 
   private void updateEnabledForProject() {
-    ProjectDependentPluginEnabledState state = myPluginModel.getProjectDependentState(myPlugin);
+    ProjectDependentPluginEnabledState state = myPluginModel.getProjectDependentState(Objects.requireNonNull(myPlugin));
     myEnabledForProject.setText(state.toString());
     myEnabledForProject.setIcon(state.getIcon());
   }
@@ -859,22 +866,19 @@ public class PluginDetailsPageComponent extends MultiPanel {
   }
 
   private @NotNull SelectionBasedPluginModelAction.EnableDisableAction<PluginDetailsPageComponent> createEnableDisableAction(@NotNull PluginEnableDisableAction action) {
-    return new SelectionBasedPluginModelAction.EnableDisableAction<>(
-      null,
-      myPluginModel,
-      action,
-      List.of(this),
-      PluginDetailsPageComponent::getPlugin
-    );
+    return new SelectionBasedPluginModelAction.EnableDisableAction<>(myPluginModel,
+                                                                     action,
+                                                                     false,
+                                                                     List.of(this),
+                                                                     PluginDetailsPageComponent::getPlugin);
   }
 
   private @NotNull SelectionBasedPluginModelAction.UninstallAction<PluginDetailsPageComponent> createUninstallAction() {
-    return new SelectionBasedPluginModelAction.UninstallAction<>(
-      null,
-      myPluginModel,
-      this,
-      List.of(this),
-      PluginDetailsPageComponent::getPlugin
+    return new SelectionBasedPluginModelAction.UninstallAction<>(myPluginModel,
+                                                                 false,
+                                                                 this,
+                                                                 List.of(this),
+                                                                 PluginDetailsPageComponent::getPlugin
     );
   }
 }

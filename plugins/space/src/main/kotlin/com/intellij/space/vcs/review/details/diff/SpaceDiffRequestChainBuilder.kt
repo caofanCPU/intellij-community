@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.review.details.diff
 
 import circlet.client.api.ProjectKey
@@ -14,25 +14,24 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.UserDataHolder
+import com.intellij.space.vcs.review.details.ChangesWithDiscussion
 import com.intellij.space.vcs.review.details.SpaceReviewChange
-import com.intellij.space.vcs.review.details.SpaceReviewChangesVm
 import com.intellij.space.vcs.review.details.SpaceReviewParticipantsVm
 import libraries.coroutines.extra.Lifetime
-import runtime.reactive.Property
+import runtime.reactive.LoadingProperty
 import runtime.reactive.SequentialLifetimes
 
 internal data class SpaceReviewDiffRequestData(
   val diffExtensionLifetimes: SequentialLifetimes,
   val spaceDiffVm: SpaceDiffVm,
-  val changesVm: SpaceReviewChangesVm,
-  val spaceReviewChange: SpaceReviewChange,
-  val participantsVm: Property<SpaceReviewParticipantsVm?>
+  val changes: LoadingProperty<Map<String, ChangesWithDiscussion>?>,
+  val selectedChange: SpaceReviewChange,
+  val participantsVm: SpaceReviewParticipantsVm?
 )
 
 internal class SpaceDiffRequestChainBuilder(parentLifetime: Lifetime,
                                             private val project: Project,
-                                            val spaceDiffVm: SpaceDiffVm,
-                                            val changesVm: SpaceReviewChangesVm) {
+                                            val spaceDiffVm: SpaceDiffVm) {
   private val chainBuilderLifetimes = SequentialLifetimes(parentLifetime)
 
   fun getRequestChain(listSelection: ListSelection<SpaceReviewChange>): DiffRequestChain {
@@ -46,7 +45,7 @@ internal class SpaceDiffRequestChainBuilder(parentLifetime: Lifetime,
       }
 
       private fun getDiffRequestProducer(lifetime: Lifetime, spaceReviewChange: SpaceReviewChange): DiffRequestProducer {
-        return SpaceDiffRequestProducer(project, lifetime, spaceDiffVm, changesVm, spaceReviewChange)
+        return SpaceDiffRequestProducer(project, lifetime, spaceDiffVm, spaceDiffVm.changesVm.value.changes, spaceReviewChange)
       }
     }
   }
@@ -56,34 +55,34 @@ private class SpaceDiffRequestProducer(
   private val project: Project,
   private val requestProducerLifetime: Lifetime,
   private val spaceDiffVm: SpaceDiffVm,
-  private val changesVm: SpaceReviewChangesVm,
+  private val changes: LoadingProperty<Map<String, ChangesWithDiscussion>?>,
   private val spaceReviewChange: SpaceReviewChange,
 ) : DiffRequestProducer {
   override fun getName(): String = spaceReviewChange.filePath.path
   override fun process(context: UserDataHolder, indicator: ProgressIndicator): DiffRequest {
     val projectKey = spaceDiffVm.projectKey
-    val selectedCommitHashes = spaceDiffVm.selectedCommits.value
+    val selectedCommitHashes = spaceDiffVm.changesVm.value.selectedCommits.value
       .filter { it.commitWithGraph.repositoryName == spaceReviewChange.repository }
       .map { it.commitWithGraph.commit.id }
 
     return if (selectedCommitHashes.isNotEmpty()) {
-      createSpaceDiffRequest(projectKey, selectedCommitHashes, changesVm)
+      createSpaceDiffRequest(projectKey, selectedCommitHashes, changes)
     }
     else LoadingDiffRequest("")
   }
 
   private fun createSpaceDiffRequest(projectKey: ProjectKey,
                                      selectedCommitHashes: List<String>,
-                                     changesVm: SpaceReviewChangesVm): SimpleDiffRequest {
-    val pair = spaceDiffVm.spaceReviewDiffLoader.loadDiff(project, projectKey, spaceReviewChange, selectedCommitHashes)
+                                     changes: LoadingProperty<Map<String, ChangesWithDiscussion>?>): SimpleDiffRequest {
+    val diffData = spaceDiffVm.spaceReviewDiffLoader.loadDiff(project, projectKey, spaceReviewChange, selectedCommitHashes)
 
     val diffRequestData = SpaceReviewDiffRequestData(SequentialLifetimes(requestProducerLifetime),
                                                      spaceDiffVm,
-                                                     changesVm,
+                                                     changes,
                                                      spaceReviewChange,
-                                                     changesVm.participantsVm)
+                                                     spaceDiffVm.participantVm.value)
 
-    return SpaceReviewDiffRequest(spaceReviewChange.filePath.path, pair.first, pair.second, requestProducerLifetime,
+    return SpaceReviewDiffRequest(spaceReviewChange.filePath.path, diffData.contents, diffData.titles, requestProducerLifetime,
                                   diffRequestData)
   }
 }

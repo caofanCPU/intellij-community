@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.components.service
 import com.intellij.openapi.progress.util.ProgressWindow
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Splitter
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vcs.AbstractVcsHelper
 import com.intellij.openapi.vcs.VcsBundle
@@ -59,6 +60,7 @@ import java.awt.BorderLayout
 import javax.swing.JPanel
 
 internal class GitStagePanel(private val tracker: GitStageTracker,
+                             isVertical: Boolean,
                              isEditorDiffPreview: Boolean,
                              disposableParent: Disposable,
                              private val activate: () -> Unit) :
@@ -66,6 +68,7 @@ internal class GitStagePanel(private val tracker: GitStageTracker,
   private val project = tracker.project
 
   val tree: GitStageTree
+  private val treeMessageSplitter: Splitter
   private val commitPanel: GitStageCommitPanel
   private val commitWorkflowHandler: GitStageCommitWorkflowHandler
   private val progressStripe: ProgressStripe
@@ -113,23 +116,24 @@ internal class GitStagePanel(private val tracker: GitStageTracker,
     }
     val treePanel = simplePanel(createScrollPane(tree, SideBorder.TOP)).addToBottom(statusPanel)
     progressStripe = ProgressStripe(treePanel, this, ProgressWindow.DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS)
-    val treeMessageSplitter = OnePixelSplitter(true, "git.stage.tree.message.splitter", 0.7f)
-    treeMessageSplitter.firstComponent = progressStripe
-    treeMessageSplitter.secondComponent = commitPanel
+    val treePanelWithToolbar = JPanel(BorderLayout())
+    treePanelWithToolbar.add(toolbar.component, BorderLayout.NORTH)
+    treePanelWithToolbar.add(progressStripe, BorderLayout.CENTER)
 
-    val leftPanel = JPanel(BorderLayout())
-    leftPanel.add(toolbar.component, BorderLayout.NORTH)
-    leftPanel.add(treeMessageSplitter, BorderLayout.CENTER)
+    treeMessageSplitter = TwoKeySplitter(true, ProportionKey("git.stage.tree.message.splitter", 0.7f,
+                                                             "git.stage.tree.message.splitter.horizontal", 0.5f))
+    treeMessageSplitter.firstComponent = treePanelWithToolbar
+    treeMessageSplitter.secondComponent = commitPanel
 
     changesStatusPanel = Wrapper()
     changesStatusPanel.minimumSize = JBUI.emptySize()
 
     commitDiffSplitter = OnePixelSplitter("git.stage.commit.diff.splitter", 0.5f)
-    commitDiffSplitter.firstComponent = leftPanel
+    commitDiffSplitter.firstComponent = treeMessageSplitter
     add(commitDiffSplitter, BorderLayout.CENTER)
     add(changesStatusPanel, BorderLayout.SOUTH)
 
-    setDiffPreviewInEditor(isEditorDiffPreview, force = true)
+    updateLayout(isVertical, isEditorDiffPreview, forceDiffPreview = true)
 
     tracker.addListener(MyGitStageTrackerListener(), this)
     val busConnection = project.messageBus.connect(this)
@@ -170,7 +174,16 @@ internal class GitStagePanel(private val tracker: GitStageTracker,
     return null
   }
 
-  fun setDiffPreviewInEditor(isInEditor: Boolean, force: Boolean = false) {
+  fun updateLayout(isVertical: Boolean, canUseEditorDiffPreview: Boolean, forceDiffPreview: Boolean = false) {
+    val isEditorDiffPreview = canUseEditorDiffPreview || isVertical
+    val isMessageSplitterVertical = isVertical || !isEditorDiffPreview
+    if (treeMessageSplitter.orientation != isMessageSplitterVertical) {
+      treeMessageSplitter.orientation = isMessageSplitterVertical
+    }
+    setDiffPreviewInEditor(isEditorDiffPreview, forceDiffPreview)
+  }
+
+  private fun setDiffPreviewInEditor(isInEditor: Boolean, force: Boolean = false) {
     if (Disposer.isDisposed(this)) return
     if (!force && (isInEditor == (editorTabPreview != null))) return
 

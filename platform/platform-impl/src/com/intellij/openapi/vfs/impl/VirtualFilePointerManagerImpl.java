@@ -12,6 +12,7 @@ import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
@@ -31,6 +32,7 @@ import com.intellij.openapi.vfs.pointers.VirtualFilePointer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerContainer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerListener;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerManager;
+import com.intellij.testFramework.TestModeFlags;
 import com.intellij.util.ConcurrencyUtil;
 import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
@@ -49,15 +51,16 @@ import java.util.concurrent.ConcurrentMap;
 public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManager implements Disposable, BulkFileListener {
   private static final Logger LOG = Logger.getInstance(VirtualFilePointerManagerImpl.class);
   private static final boolean IS_UNDER_UNIT_TEST = ApplicationManager.getApplication().isUnitTestMode();
-  private static volatile boolean disableConsistencyCheckInTest = false;
+  private static final Key<Boolean> DISABLE_VFS_CONSISTENCY_CHECK_IN_TEST = Key.create("DISABLE_VFS_CONSISTENCY_CHECK_IN_TEST");
 
   static boolean shouldCheckConsistency() {
-    return IS_UNDER_UNIT_TEST && !ApplicationInfoImpl.isInStressTest() && !disableConsistencyCheckInTest;
+    return IS_UNDER_UNIT_TEST && !ApplicationInfoImpl.isInStressTest()
+           && !Boolean.TRUE.equals(TestModeFlags.get(DISABLE_VFS_CONSISTENCY_CHECK_IN_TEST));
   }
 
   @TestOnly
-  public static void setDisableConsistencyCheckInTest(boolean isDisabled) {
-    disableConsistencyCheckInTest = isDisabled;
+  public static void disableConsistencyChecksInTestsTemporarily(@NotNull Disposable testDisposable) {
+    TestModeFlags.set(DISABLE_VFS_CONSISTENCY_CHECK_IN_TEST, true, testDisposable);
   }
 
   /*
@@ -128,11 +131,11 @@ public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManag
                                    boolean addSubdirectoryPointers,
                                    @NotNull NewVirtualFileSystem fs,
                                    @NotNull VFileEvent event) {
-    addRelevantPointers(file, parent, childNameId, toFirePointers, toUpdateNodes, addSubdirectoryPointers, fs, true, event);
+    addRelevantPointers(parent, file, childNameId, toFirePointers, toUpdateNodes, addSubdirectoryPointers, fs, true, event);
   }
 
-  private void addRelevantPointers(@Nullable VirtualFile file,
-                                   @NotNull VirtualFileSystemEntry parent,
+  private void addRelevantPointers(@NotNull VirtualFileSystemEntry parent,
+                                   @Nullable VirtualFile file,
                                    int childNameId,
                                    @NotNull MultiMap<? super VirtualFilePointerListener, ? super VirtualFilePointerImpl> toFirePointers,
                                    @NotNull List<? super NodeToUpdate> toUpdateNodes,
@@ -185,7 +188,7 @@ public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManag
       }
       if (fileSystem == null) {
         // will always be null
-        return new LightFilePointerUrl(url);
+        return new LightFilePointer(url);
       }
     }
     else {
@@ -201,7 +204,7 @@ public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManag
       // so for now we create normal pointers only when there are listeners.
       // maybe, later we'll fix all those tests
       VirtualFile found = file == null ? VirtualFileManager.getInstance().findFileByUrl(url) : file;
-      return found == null ? new LightFilePointerUrl(url) : new LightFilePointerUrl(found);
+      return found == null ? new LightFilePointer(url) : new LightFilePointer(found);
     }
 
     if (!(fileSystem instanceof VirtualFilePointerCapableFileSystem)) {
@@ -338,13 +341,14 @@ public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManag
                                                           @Nullable VirtualFilePointerListener listener,
                                                           @NotNull NewVirtualFileSystem fs) {
     VirtualFileSystem fsFromFile = file == null ? VirtualFileManager.getInstance().getFileSystem(VirtualFileManager.extractProtocol(url)) : file.getFileSystem();
-    assert fs == fsFromFile : "fs=" + fs + "; file.fs=" + fsFromFile;
+    assert fs == fsFromFile : "fs=" + fs + "; file.fs=" + fsFromFile+"; url="+url+"; file="+file;
 
     FilePartNodeRoot root = getRoot(fs);
-    FilePartNode node = (file == null ?
-                         root.findOrCreateByPath(fs instanceof ArchiveFileSystem && !path.contains(JarFileSystem.JAR_SEPARATOR) ? path + JarFileSystem.JAR_SEPARATOR : path, fs)
-                         : root.findOrCreateByFile(file)).node;
-    assert fs == node.myFS : "fs=" + fs + "; myFS=" + node.myFS;
+    NodeToUpdate toUpdate = file == null ?
+        root.findOrCreateByPath(fs instanceof ArchiveFileSystem && !path.contains(JarFileSystem.JAR_SEPARATOR) ? path + JarFileSystem.JAR_SEPARATOR : path, fs)
+        : root.findOrCreateByFile(file);
+    FilePartNode node = toUpdate.node;
+    assert fs == node.myFS : "fs=" + fs + "; node.myFS=" + node.myFS+"; url="+url+"; file="+file;
 
     VirtualFilePointerImpl pointer = node.getPointer(listener);
     if (pointer == null) {
@@ -531,7 +535,7 @@ public final class VirtualFilePointerManagerImpl extends VirtualFilePointerManag
               addRelevantPointers(eventFile, parent, newNameId, toFirePointers, toUpdateNodes, true, fs, event);
 
               // old pointers remain valid after rename, no need to fire
-              addRelevantPointers(eventFile, parent, FilePartNode.getNameId(eventFile), toFirePointers, toUpdateNodes, true, fs, false, event);
+              addRelevantPointers(parent, eventFile, FilePartNode.getNameId(eventFile), toFirePointers, toUpdateNodes, true, fs, false, event);
             }
           }
         }

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.eventLog.validator.storage;
 
 import com.google.gson.Gson;
@@ -6,14 +6,13 @@ import com.google.gson.GsonBuilder;
 import com.intellij.internal.statistic.eventLog.EventLogBuild;
 import com.intellij.internal.statistic.eventLog.EventLogConfiguration;
 import com.intellij.internal.statistic.eventLog.StatisticsEventLoggerKt;
-import com.intellij.internal.statistic.eventLog.validator.SensitiveDataValidator;
-import com.intellij.internal.statistic.eventLog.validator.rules.beans.EventGroupRules;
-import com.intellij.internal.statistic.eventLog.validator.storage.persistence.EventLogMetadataPersistence;
-import com.intellij.internal.statistic.eventLog.validator.storage.persistence.EventLogTestMetadataPersistence;
-import com.intellij.internal.statistic.eventLog.connection.metadata.EventGroupFilterRules;
 import com.intellij.internal.statistic.eventLog.connection.metadata.EventGroupRemoteDescriptors;
 import com.intellij.internal.statistic.eventLog.connection.metadata.EventGroupRemoteDescriptors.EventGroupRemoteDescriptor;
 import com.intellij.internal.statistic.eventLog.connection.metadata.EventGroupRemoteDescriptors.GroupRemoteRule;
+import com.intellij.internal.statistic.eventLog.validator.IntellijSensitiveDataValidator;
+import com.intellij.internal.statistic.eventLog.validator.rules.beans.EventGroupRules;
+import com.intellij.internal.statistic.eventLog.validator.storage.persistence.EventLogMetadataPersistence;
+import com.intellij.internal.statistic.eventLog.validator.storage.persistence.EventLogTestMetadataPersistence;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,16 +20,19 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
-public class ValidationTestRulesPersistedStorage extends BaseValidationRulesPersistedStorage {
-  protected final ConcurrentMap<String, EventGroupRules> eventsValidators = new ConcurrentHashMap<>();
+public final class ValidationTestRulesPersistedStorage implements IntellijValidationRulesStorage {
+  private final ConcurrentMap<String, EventGroupRules> eventsValidators = new ConcurrentHashMap<>();
   private final Object myLock = new Object();
   private final @NotNull EventLogTestMetadataPersistence myTestMetadataPersistence;
   private final @NotNull EventLogMetadataPersistence myMetadataPersistence;
   private final @NotNull String myRecorderId;
+  private final @NotNull AtomicBoolean myIsInitialized;
 
   ValidationTestRulesPersistedStorage(@NotNull String recorderId) {
+    myIsInitialized = new AtomicBoolean(false);
     myTestMetadataPersistence = new EventLogTestMetadataPersistence(recorderId);
     myMetadataPersistence = new EventLogMetadataPersistence(recorderId);
     updateValidators();
@@ -52,16 +54,21 @@ public class ValidationTestRulesPersistedStorage extends BaseValidationRulesPers
     updateValidators();
   }
 
+  @Override
+  public boolean isUnreachable() {
+    return !myIsInitialized.get();
+  }
+
   private void updateValidators() {
     synchronized (myLock) {
       eventsValidators.clear();
-      isInitialized.set(false);
+      myIsInitialized.set(false);
       EventGroupRemoteDescriptors productionGroups = EventLogTestMetadataPersistence.loadCachedEventGroupsSchemes(myMetadataPersistence);
       EventGroupRemoteDescriptors testGroups = EventLogTestMetadataPersistence.loadCachedEventGroupsSchemes(myTestMetadataPersistence);
       final Map<String, EventGroupRules> result = createValidators(testGroups, productionGroups.rules);
 
       eventsValidators.putAll(result);
-      isInitialized.set(true);
+      myIsInitialized.set(true);
     }
   }
 
@@ -69,13 +76,13 @@ public class ValidationTestRulesPersistedStorage extends BaseValidationRulesPers
     return EventLogTestMetadataPersistence.loadCachedEventGroupsSchemes(myMetadataPersistence);
   }
 
-  protected @NotNull Map<String, EventGroupRules> createValidators(@NotNull EventGroupRemoteDescriptors groups,
-                                                                   @Nullable GroupRemoteRule productionRules) {
+  @NotNull
+  private static Map<String, EventGroupRules> createValidators(@NotNull EventGroupRemoteDescriptors groups,
+                                                               @Nullable GroupRemoteRule productionRules) {
     final GroupRemoteRule rules = merge(groups.rules, productionRules);
+    GlobalRulesHolder globalRulesHolder = new GlobalRulesHolder(rules);
     final EventLogBuild build = EventLogBuild.fromString(EventLogConfiguration.INSTANCE.getBuild());
-    return groups.groups.stream().
-      filter(group -> EventGroupFilterRules.create(group).accepts(build)).
-      collect(Collectors.toMap(group -> group.id, group -> EventGroupRules.create(group, new GlobalRulesHolder(rules))));
+    return ValidationRulesPersistedStorage.createValidators(build, groups, globalRulesHolder);
   }
 
   public void addTestGroup(@NotNull GroupValidationTestRule group) throws IOException {
@@ -83,7 +90,7 @@ public class ValidationTestRulesPersistedStorage extends BaseValidationRulesPers
     updateValidators();
   }
 
-  protected void cleanup() {
+  private void cleanup() {
     synchronized (myLock) {
       eventsValidators.clear();
       myTestMetadataPersistence.cleanup();
@@ -149,16 +156,17 @@ public class ValidationTestRulesPersistedStorage extends BaseValidationRulesPers
 
   public static void cleanupAll(List<String> recorders) {
     for (String recorderId : recorders) {
-      ValidationTestRulesPersistedStorage testStorage = getTestStorage(recorderId);
+      ValidationTestRulesPersistedStorage testStorage = getTestStorage(recorderId, false);
       if (testStorage != null) {
         testStorage.cleanup();
       }
     }
   }
 
-  public static @Nullable ValidationTestRulesPersistedStorage getTestStorage(String recorderId) {
-    SensitiveDataValidator validator = SensitiveDataValidator.getIfInitialized(recorderId);
-    ValidationRulesStorage storage = validator != null ? validator.getValidationRulesStorage() : null;
+  public static @Nullable ValidationTestRulesPersistedStorage getTestStorage(@NotNull String recorderId, boolean initIfNeeded) {
+    IntellijSensitiveDataValidator validator =
+      initIfNeeded ? IntellijSensitiveDataValidator.getInstance(recorderId) : IntellijSensitiveDataValidator.getIfInitialized(recorderId);
+    IntellijValidationRulesStorage storage = validator != null ? validator.getValidationRulesStorage() : null;
     return storage instanceof ValidationTestRulesStorageHolder ? ((ValidationTestRulesStorageHolder)storage).getTestGroupStorage() : null;
   }
 

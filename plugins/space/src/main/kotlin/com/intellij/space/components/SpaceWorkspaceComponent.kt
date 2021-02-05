@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.components
 
 import circlet.arenas.initCircletArenas
@@ -6,6 +6,7 @@ import circlet.client.api.impl.ApiClassesDeserializer
 import circlet.client.api.impl.tombstones.registerArenaTombstones
 import circlet.code.api.CodeReviewArena
 import circlet.code.api.CodeReviewParticipantsArena
+import circlet.code.api.ReviewPendingMessageCounterArena
 import circlet.common.oauth.IdeaOAuthConfig
 import circlet.permissions.FeatureFlagsVmPersistenceKey
 import circlet.platform.api.oauth.OAuthTokenResponse
@@ -49,7 +50,11 @@ import runtime.mutableUiDispatch
 import runtime.persistence.InMemoryPersistence
 import runtime.persistence.PersistenceConfiguration
 import runtime.persistence.PersistenceKey
-import runtime.reactive.*
+import runtime.reactive.MutableProperty
+import runtime.reactive.Property
+import runtime.reactive.SequentialLifetimes
+import runtime.reactive.mutableProperty
+import runtime.reactive.property.map
 import java.awt.Component
 import java.net.URI
 import java.net.URL
@@ -91,8 +96,6 @@ internal class SpaceWorkspaceComponent : WorkspaceManagerHost(), LifetimedDispos
     }
 
     workspace.forEach(lifetime) { ws ->
-      System.setProperty("space_server_for_script_definition", ws?.client?.server?.let { "$it/system/maven" } ?: "not_set")
-
       loginState.value = if (ws == null) {
         SpaceLoginState.Disconnected(SpaceSettings.getInstance().serverSettings.server)
       }
@@ -105,7 +108,7 @@ internal class SpaceWorkspaceComponent : WorkspaceManagerHost(), LifetimedDispos
   private fun initApp() {
     val application = ApplicationManager.getApplication()
 
-    mutableUiDispatch = ApplicationDispatcher(application)
+    mutableUiDispatch = ApplicationDispatcher(this, application)
 
     initCircletArenas()
     registerArenaTombstones(ExtendableSerializationRegistry.global)
@@ -115,6 +118,7 @@ internal class SpaceWorkspaceComponent : WorkspaceManagerHost(), LifetimedDispos
     // code review
     ClientArenaRegistry.register(CodeReviewArena)
     ClientArenaRegistry.register(CodeReviewParticipantsArena)
+    ClientArenaRegistry.register(ReviewPendingMessageCounterArena)
     circlet.code.api.impl.ApiClassesDeserializer(ExtendableSerializationRegistry.global).registerDeserializers()
   }
 
@@ -157,7 +161,14 @@ internal class SpaceWorkspaceComponent : WorkspaceManagerHost(), LifetimedDispos
     return response
   }
 
-  fun signInManually(serverName: String, uiLifetime: Lifetime, component: Component) {
+  fun signInManually(server:String, uiLifetime: Lifetime, component: Component) {
+    var serverName = server
+    if (serverName.isBlank()) {
+      val error = SpaceBundle.message("login.panel.error.organization.url.should.not.be.empty")
+      loginState.value = SpaceLoginState.Disconnected("", error)
+      return
+    }
+    serverName = normalizeUrl(serverName)
     launch(uiLifetime, Ui) {
       uiLifetime.usingSource { connectLt ->
         try {
@@ -186,6 +197,13 @@ internal class SpaceWorkspaceComponent : WorkspaceManagerHost(), LifetimedDispos
         AppIcon.getInstance().requestFocus(frame as IdeFrame?)
       }
     }
+  }
+
+  private fun normalizeUrl(serverName: String): String {
+    var result = serverName
+    result = if (result.startsWith("https://") || result.startsWith("http://")) result else "https://$result"
+    result = result.removeSuffix("/")
+    return result
   }
 
   fun signOut() {

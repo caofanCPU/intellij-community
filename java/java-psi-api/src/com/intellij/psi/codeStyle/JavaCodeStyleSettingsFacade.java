@@ -25,29 +25,12 @@ import com.intellij.psi.PsiFile;
  */
 @Deprecated
 public abstract class JavaCodeStyleSettingsFacade {
-  /**
-   * @deprecated Use {@link JavaFileCodeStyleFacade#getNamesCountToUseImportOnDemand()}
-   */
-  @Deprecated
-  public abstract int getNamesCountToUseImportOnDemand();
-
-  /**
-   * @deprecated Use {@link JavaFileCodeStyleFacade#isToImportOnDemand(String)}
-   */
-  @Deprecated
-  public abstract boolean isToImportInDemand(String qualifiedName);
 
   /**
    * @deprecated Use {@link JavaFileCodeStyleFacade#useFQClassNames()}
    */
   @Deprecated
   public abstract boolean useFQClassNames();
-
-  /**
-   * @deprecated Use {@link JavaFileCodeStyleFacade#isJavaDocLeadingAsterisksEnabled()}
-   */
-  @Deprecated
-  public abstract boolean isJavaDocLeadingAsterisksEnabled();
 
   /**
    * @deprecated Use {@link JavaFileCodeStyleFacade#getIndentSize()}
@@ -60,13 +43,6 @@ public abstract class JavaCodeStyleSettingsFacade {
    */
   @Deprecated
   public abstract boolean isGenerateFinalParameters();
-
-  /**
-   * @deprecated Use {@link JavaFileCodeStyleFacade#isGenerateFinalLocals()}
-   */
-  @Deprecated
-  public abstract boolean isGenerateFinalLocals();
-
 
   /**
    * @deprecated Use {@link JavaFileCodeStyleFacade#forContext(PsiFile)} instead.

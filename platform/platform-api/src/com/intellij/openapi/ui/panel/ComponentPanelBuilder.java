@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.ui.panel;
 
 import com.intellij.icons.AllIcons;
@@ -10,10 +10,7 @@ import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.HtmlBuilder;
 import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.ui.BrowserHyperlinkListener;
-import com.intellij.ui.ColorUtil;
-import com.intellij.ui.ContextHelpLabel;
-import com.intellij.ui.EditorTextComponent;
+import com.intellij.ui.*;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.ui.scale.JBUIScale;
@@ -321,10 +318,10 @@ public class ComponentPanelBuilder implements GridBagPanelBuilder {
                                      int maxLineLength) {
     if (commentText != null) {
       @NonNls String css = "<head><style type=\"text/css\">\n" +
-                           "a, a:link {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkColor()) + ";}\n" +
-                           "a:visited {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkVisitedColor()) + ";}\n" +
-                           "a:hover {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkHoverColor()) + ";}\n" +
-                           "a:active {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkPressedColor()) + ";}\n" +
+                           "a, a:link {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.Foreground.ENABLED) + ";}\n" +
+                           "a:visited {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.Foreground.VISITED) + ";}\n" +
+                           "a:hover {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.Foreground.HOVERED) + ";}\n" +
+                           "a:active {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.Foreground.PRESSED) + ";}\n" +
                            //"body {background-color:#" + ColorUtil.toHex(JBColor.YELLOW) + ";}\n" + // Left for visual debugging
                            "</style>\n</head>";
       HtmlChunk text = HtmlChunk.raw(commentText);
@@ -346,7 +343,7 @@ public class ComponentPanelBuilder implements GridBagPanelBuilder {
   private static class CommentLabel extends JBLabel {
     private CommentLabel(@NotNull @NlsContexts.Label String text) {
       super(text);
-      setForeground(UIUtil.getContextHelpForeground());
+      setForeground(JBUI.CurrentTheme.ContextHelp.FOREGROUND);
     }
 
     @Override
@@ -354,10 +351,7 @@ public class ComponentPanelBuilder implements GridBagPanelBuilder {
       super.setUI(ui);
 
       if (SystemInfo.isMac) {
-        Font font = getFont();
-        float size = font.getSize2D();
-        font = new FontUIResource(font.deriveFont(size - JBUIScale.scale(2))); // Allow to reset the font by UI
-        setFont(font);
+        setFont(new FontUIResource(RelativeFont.NORMAL.fromResource("ContextHelp.fontSizeOffset", -2).derive(getFont())));
       }
     }
   }

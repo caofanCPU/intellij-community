@@ -147,7 +147,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     // a new top level frame just got the focus. This is important to prevent screen readers
     // from announcing the title of the top level frame when the list is shown (or hidden),
     // as they usually do when a new top-level frame receives the focus.
-    AccessibleContextUtil.setParent((Component)myList, myEditor.getContentComponent());
+    AccessibleContextUtil.setParent(myList, myEditor.getContentComponent());
 
     myList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     myList.setBackground(LookupCellRenderer.BACKGROUND_COLOR);
@@ -672,6 +672,10 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
 
     LookupUsageTracker.trackLookup(myCreatedTimestamp, this);
 
+    return doShowLookup();
+  }
+
+  protected boolean doShowLookup() {
     myAdComponent.showRandomText();
     if (Boolean.TRUE.equals(myEditor.getUserData(AutoPopupController.NO_ADS))) {
       myAdComponent.clearAdvertisements();

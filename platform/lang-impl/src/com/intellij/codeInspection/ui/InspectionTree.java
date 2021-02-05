@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.codeInspection.ui;
 
@@ -34,11 +34,7 @@ import com.intellij.ui.tree.AsyncTreeModel;
 import com.intellij.ui.tree.TreeCollector.TreePathRoots;
 import com.intellij.ui.tree.TreePathUtil;
 import com.intellij.ui.treeStructure.Tree;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.ArrayUtilRt;
-import com.intellij.util.EditSourceOnDoubleClickHandler;
-import com.intellij.util.EditSourceOnEnterKeyHandler;
-import com.intellij.util.OpenSourceUtil;
+import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.containers.Stack;
@@ -46,7 +42,6 @@ import com.intellij.util.containers.TreeTraversal;
 import com.intellij.util.ui.EdtInvocationManager;
 import com.intellij.util.ui.tree.TreeModelAdapter;
 import com.intellij.util.ui.tree.TreeUtil;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -147,6 +142,7 @@ public class InspectionTree extends Tree {
   @Nullable
   public InspectionToolWrapper getSelectedToolWrapper(boolean allowDummy) {
     InspectionProfileImpl profile = myView.getCurrentProfile();
+    if (profile == null) return null;
     String singleToolName = profile.getSingleTool();
     final TreePath[] paths = getSelectionPaths();
     if (paths == null) {
@@ -407,9 +403,8 @@ public class InspectionTree extends Tree {
       }
       return;
     }
-    Set<InspectionTreeNode> processedNodes = new THashSet<>();
+    Set<InspectionTreeNode> processedNodes = new HashSet<>();
     List<InspectionTreeNode> toRemove = new ArrayList<>();
-    List<TreePath> pathsToSelect = new ArrayList<>();
     for (TreePath path : selected) {
       Object[] nodePath = path.getPath();
 
@@ -420,17 +415,28 @@ public class InspectionTree extends Tree {
 
         if (shouldDelete(node)) {
           toRemove.add(node);
-          TreePath toSelect = getParentPath(path, nodePath.length - i);
-          if (toSelect != null) {
-            pathsToSelect.add(toSelect);
-          }
           break;
         }
       }
     }
 
     if (toRemove.isEmpty()) return;
-    Set<InspectionTreeNode> parents = new THashSet<>();
+
+    TreePath pathToSelect = null;
+    if (selected.length == 1) {
+      final InspectionTreeNode nextNode = myModel
+        .traverseFrom((InspectionTreeNode) selected[0].getLastPathComponent(), true)
+        .filter(n -> !shouldDelete(n)).first();
+      if (nextNode != null) pathToSelect = TreeUtil.getPathFromRoot(nextNode);
+    } else {
+      TreePath commonAliveAncestorPath = TreePathUtil.findCommonAncestor(selected);
+      while (commonAliveAncestorPath != null && shouldDelete((InspectionTreeNode) commonAliveAncestorPath.getLastPathComponent())) {
+        commonAliveAncestorPath = commonAliveAncestorPath.getParentPath();
+      }
+      if (commonAliveAncestorPath != null) pathToSelect = commonAliveAncestorPath;
+    }
+
+    Set<InspectionTreeNode> parents = new HashSet<>();
     for (InspectionTreeNode node : toRemove) {
       InspectionTreeNode parent = node.getParent();
       if (parent != null) {
@@ -442,19 +448,11 @@ public class InspectionTree extends Tree {
     for (InspectionTreeNode parent : parents) {
       parent.dropProblemCountCaches();
     }
-    TreePath commonPath = TreePathUtil.findCommonAncestor(pathsToSelect);
-    if (commonPath != null) TreeUtil.selectPath(this, commonPath);
+
+    TreeUtil.selectPath(this, pathToSelect);
 
     revalidate();
     repaint();
-  }
-
-  private static TreePath getParentPath(TreePath path, int ord) {
-    TreePath parent = path;
-    for (int j = 0; j < ord; j++) {
-      parent = parent.getParentPath();
-    }
-    return parent;
   }
 
   private boolean shouldDelete(InspectionTreeNode node) {

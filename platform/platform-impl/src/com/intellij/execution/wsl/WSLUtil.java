@@ -5,6 +5,7 @@ import com.intellij.execution.ExecutionException;
 import com.intellij.execution.process.*;
 import com.intellij.openapi.application.Experiments;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -35,37 +36,22 @@ public final class WSLUtil {
   public static final Logger LOG = Logger.getInstance("#com.intellij.execution.wsl");
 
   /**
-   * this listener is a hack for https://github.com/Microsoft/BashOnWindows/issues/2592
-   * See RUBY-20358
+   * @deprecated use {@link WslDistributionManager#getInstalledDistributions} instead.
+   * Alternatively, check {@link WSLUtil#isSystemCompatible} and show standard WSL UI, e.g.
+   * {@link com.intellij.execution.wsl.ui.WslDistributionComboBox}. If no WSL distributions installed,
+   * it will show "No installed distributions" message.
    */
-  private static final ProcessListener INPUT_CLOSE_LISTENER = new ProcessAdapter() {
-    @Override
-    public void startNotified(@NotNull ProcessEvent event) {
-      OutputStream input = event.getProcessHandler().getProcessInput();
-      if (input != null) {
-        try {
-          input.flush();
-          input.close();
-        }
-        catch (IOException ignore) {
-        }
-      }
-    }
-  };
-
-  /**
-   * @return true if there are distributions available for usage
-   */
+  @Deprecated
   public static boolean hasAvailableDistributions() {
     return !getAvailableDistributions().isEmpty();
   }
 
 
   /**
-   * @return list of installed WSL distributions
-   * @apiNote order of entries depends on configuration file and may change between launches.
-   * @see WSLDistributionService
+   * @deprecated use {@link WslDistributionManager#getInstalledDistributions()} instead
    */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @NotNull
   public static List<WSLDistribution> getAvailableDistributions() {
     if (!isSystemCompatible()) return Collections.emptyList();
@@ -108,8 +94,10 @@ public final class WSLUtil {
   }
 
   /**
-   * @return instance of WSL distribution or null if it's unavailable
+   * @deprecated use {@link WslDistributionManager#getOrCreateDistributionByMsId(String)} instead
    */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @Nullable
   public static WSLDistribution getDistributionById(@Nullable String id) {
     if (id == null) {
@@ -125,7 +113,7 @@ public final class WSLUtil {
 
   /**
    * @return instance of WSL distribution or null if it's unavailable
-   * @deprecated Use {@link WslDistributionManager#getDistributionByMsId(String)}
+   * @deprecated Use {@link WslDistributionManager#getOrCreateDistributionByMsId(String)}
    */
   @Nullable
   @Deprecated
@@ -139,21 +127,6 @@ public final class WSLUtil {
       }
     }
     return null;
-  }
-
-  /**
-   * Temporary hack method to fix <a href="https://github.com/Microsoft/BashOnWindows/issues/2592">WSL bug</a>
-   * Must be invoked just before execution, see RUBY-20358
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  @NotNull
-  public static <T extends ProcessHandler> T addInputCloseListener(@NotNull T processHandler) {
-    if (Experiments.getInstance().isFeatureEnabled("wsl.close.process.input")) {
-      processHandler.removeProcessListener(INPUT_CLOSE_LISTENER);
-      processHandler.addProcessListener(INPUT_CLOSE_LISTENER);
-    }
-    return processHandler;
   }
 
   public static boolean isSystemCompatible() {
@@ -194,5 +167,11 @@ public final class WSLUtil {
       LOG.warn(e);
       return ThreeState.UNSURE;
     }
+  }
+
+  public static @NotNull @NlsSafe String getMsId(@NotNull @NlsSafe String msOrInternalId) {
+    WslDistributionDescriptor descriptor = ContainerUtil.find(WSLDistributionService.getInstance().getDescriptors(),
+                                                              d -> d.getId().equals(msOrInternalId));
+    return descriptor != null ? descriptor.getMsId() : msOrInternalId;
   }
 }

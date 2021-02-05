@@ -5,6 +5,7 @@ import com.intellij.CommonBundle;
 import com.intellij.core.CoreBundle;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.marketplace.MarketplacePluginDownloadService;
+import com.intellij.ide.plugins.marketplace.PluginSignatureChecker;
 import com.intellij.ide.startup.StartupActionScriptManager;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
@@ -107,7 +108,8 @@ public final class PluginInstaller {
   }
 
   private static void uninstallAfterRestart(IdeaPluginDescriptor pluginDescriptor) throws IOException {
-    StartupActionScriptManager.addActionCommand(new StartupActionScriptManager.DeleteCommand(pluginDescriptor.getPluginPath()));
+    StartupActionScriptManager
+      .addActionCommands(Collections.singletonList(new StartupActionScriptManager.DeleteCommand(pluginDescriptor.getPluginPath())));
   }
 
   public static boolean uninstallDynamicPlugin(@Nullable JComponent parentComponent,
@@ -245,6 +247,11 @@ public final class PluginInstaller {
         MessagesEx.showErrorDialog(parent, IdeBundle.message("dialog.message.fail.to.load.plugin.descriptor.from.file", file.getFileName().toString()), CommonBundle.getErrorTitle());
         return false;
       }
+      if (Registry.is("marketplace.certificate.signature.check")) {
+        if (!PluginSignatureChecker.isSignedByJetBrains(pluginDescriptor.name, file.toFile())){
+          return false;
+        }
+      }
 
       InstalledPluginsState ourState = InstalledPluginsState.getInstance();
 
@@ -351,7 +358,10 @@ public final class PluginInstaller {
                                                     IdeaPluginDescriptorImpl pluginDescriptor) {
     Path targetFile = installWithoutRestart(file, pluginDescriptor, parent);
     if (targetFile != null) {
-      IdeaPluginDescriptorImpl targetDescriptor = PluginManager.loadDescriptor(targetFile, PluginManagerCore.PLUGIN_XML);
+      IdeaPluginDescriptorImpl targetDescriptor = PluginManager.loadDescriptor(targetFile,
+                                                                               DisabledPluginsState.disabledPlugins(),
+                                                                               false,
+                                                                               PathBasedJdomXIncluder.DEFAULT_PATH_RESOLVER);
       if (targetDescriptor != null) {
         return DynamicPlugins.loadPlugin(targetDescriptor);
       }

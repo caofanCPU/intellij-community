@@ -112,6 +112,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "shift ctrl alt RIGHT",     "MoveElementRight", "Terminal.MoveToolWindowTabRight"},
     { "SPACE",                    "Console.TableResult.ColumnVisibility", "QuickPreview"},
     { "ctrl L",                   "FindNext", "Terminal.ClearBuffer"},
+    { "control alt button1",      "GotoImplementation", "UiInspector"},
     });
     put("Mac OS X 10.5+", new String[][] {
     { "F1",                       "QuickJavaDoc", "org.jetbrains.r.actions.REditorHelpAction"},
@@ -237,6 +238,7 @@ public abstract class KeymapsTestCase extends KeymapsTestCaseBase {
     { "shift ctrl alt P",         "IntroduceFunctionalParameter", "ReformatWithPrettierAction", "VcsShowPrevChangeMarker"},
     { "ctrl L",                   "$Cut", "Terminal.ClearBuffer"},
     { "alt O",                    "SwitchHeaderSource", "ExportToTextFile"},
+    { "ctrl H",                   "Replace", "Vcs.ShowMessageHistory"},
     });
     put("Default for XWin", new String[][] {
     { "shift ctrl alt button1",   "EditorAddRectangularSelectionOnMouseDrag", "QuickEvaluateExpression"},

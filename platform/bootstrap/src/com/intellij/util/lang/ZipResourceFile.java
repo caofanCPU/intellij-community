@@ -1,8 +1,9 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.lang;
 
-import com.intellij.util.lang.zip.ImmutableZipEntry;
-import com.intellij.util.lang.zip.ImmutableZipFile;
+import com.intellij.util.io.Murmur3_32Hash;
+import com.intellij.util.zip.ImmutableZipEntry;
+import com.intellij.util.zip.ImmutableZipFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,9 +15,12 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.IntBuffer;
 import java.nio.file.Path;
-import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -26,16 +30,12 @@ public final class ZipResourceFile implements ResourceFile {
   private static final int MANIFEST_HASH_CODE = Murmur3_32Hash.MURMUR3_32.hashString(JarFile.MANIFEST_NAME, 0, JarFile.MANIFEST_NAME.length());
 
   private final ImmutableZipFile zipFile;
-  private int entryCountToPreload = -1;
 
   public ZipResourceFile(@NotNull Path file) {
     try {
       zipFile = ImmutableZipFile.load(file, buffer -> {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
-        if (buffer.getInt() == 1759251304) {
-          entryCountToPreload = buffer.getShort() & 0xffff;
-          assert entryCountToPreload > 0;
-        }
+        buffer.getInt();
       });
     }
     catch (IOException e) {
@@ -44,30 +44,18 @@ public final class ZipResourceFile implements ResourceFile {
   }
 
   @Override
-  public @Nullable JarMemoryLoader preload(@NotNull Path basePath, @Nullable JarLoader jarLoader) throws IOException {
-    if (entryCountToPreload == -1) {
-      return null;
-    }
-
-    Object[] table = new Object[((entryCountToPreload * 4) + 1) & ~1];
-    String baseUrl = JarLoader.fileToUri(basePath).toString();
-    Map<Resource.Attribute, String> attributes = jarLoader == null ? null : jarLoader.loadManifestAttributes(this);
-    ImmutableZipEntry[] entries = zipFile.getEntries();
-    // skip size entry - it is still added for old implementation
-    for (int entryIndex = 1, n = entryCountToPreload + 1; entryIndex < n; entryIndex++) {
-      ImmutableZipEntry entry = entries[entryIndex];
+  public void processResources(@NotNull String dir,
+                               @NotNull Predicate<? super String> nameFilter,
+                               @NotNull BiConsumer<? super String, ? super InputStream> consumer) throws IOException {
+    int minNameLength = dir.length() + 2;
+    for (ImmutableZipEntry entry : zipFile.getEntries()) {
       String name = entry.getName();
-      int index = JarMemoryLoader.probePlain(name, table);
-      if (index >= 0) {
-        throw new IllegalArgumentException("duplicate name: " + name);
-      }
-      else {
-        int dest = -(index + 1);
-        table[dest] = name;
-        table[dest + 1] = new MemoryResource(baseUrl, entry.getData(zipFile), name, attributes);
+      if (name.length() >= minNameLength && name.startsWith(dir) && name.charAt(dir.length()) == '/' && nameFilter.test(name)) {
+        try (InputStream stream = entry.getInputStream(zipFile)) {
+          consumer.accept(name, stream);
+        }
       }
     }
-    return new JarMemoryLoader(table);
   }
 
   @Override
@@ -80,8 +68,28 @@ public final class ZipResourceFile implements ResourceFile {
   }
 
   @Override
-  public @NotNull ClasspathCache.IndexRegistrar buildClassPathCacheData() {
+  public @NotNull ClasspathCache.IndexRegistrar buildClassPathCacheData() throws IOException {
     // name hash is not added - doesn't make sense as fast lookup by name is supported by ImmutableZipFile
+    ImmutableZipEntry packageIndex = zipFile.getEntry("__packageIndex__");
+    if (packageIndex == null) {
+      return computePackageIndex();
+    }
+
+    ByteBuffer buffer = packageIndex.getByteBuffer(zipFile);
+    buffer.order(ByteOrder.LITTLE_ENDIAN);
+    int[] classPackages = new int[buffer.getInt()];
+    int[] resourcePackages = new int[buffer.getInt()];
+    IntBuffer intBuffer = buffer.asIntBuffer();
+    intBuffer.get(classPackages);
+    intBuffer.get(resourcePackages);
+    return (classMap, resourceMap, loader) -> {
+      ClasspathCache.addResourceEntries(classPackages, classMap, loader);
+      ClasspathCache.addResourceEntries(resourcePackages, resourceMap, loader);
+    };
+  }
+
+  @NotNull
+  private ClasspathCache.LoaderDataBuilder computePackageIndex() {
     ClasspathCache.LoaderDataBuilder builder = new ClasspathCache.LoaderDataBuilder(false);
     for (ImmutableZipEntry entry : zipFile.getRawNameSet()) {
       if (entry == null) {
@@ -89,7 +97,7 @@ public final class ZipResourceFile implements ResourceFile {
       }
 
       String name = entry.getName();
-      if (name.endsWith(UrlClassLoader.CLASS_EXTENSION)) {
+      if (name.endsWith(ClassPath.CLASS_EXTENSION)) {
         builder.addClassPackageFromName(name);
       }
       else {
@@ -100,31 +108,51 @@ public final class ZipResourceFile implements ResourceFile {
   }
 
   @Override
+  public @Nullable Class<?> findClass(String fileName, String className, JarLoader jarLoader, ClassPath.ClassDataConsumer classConsumer)
+    throws IOException {
+    ImmutableZipEntry entry = zipFile.getEntry(fileName);
+    if (entry == null) {
+      return null;
+    }
+
+    if (classConsumer.isByteBufferSupported(className, null)) {
+      ByteBuffer buffer = entry.getByteBuffer(zipFile);
+      try {
+        return classConsumer.consumeClassData(className, buffer, jarLoader, null);
+      }
+      finally {
+        entry.releaseBuffer(buffer);
+      }
+    }
+    else {
+      return classConsumer.consumeClassData(className, entry.getData(zipFile), jarLoader, null);
+    }
+  }
+
+  @Override
   public @Nullable Resource getResource(@NotNull String name, @NotNull JarLoader jarLoader) throws IOException {
     ImmutableZipEntry entry = zipFile.getEntry(name);
     if (entry == null) {
       return null;
     }
-    return new ZipFileResource(jarLoader.url, entry, zipFile, jarLoader);
+    return new ZipFileResource(jarLoader.url, entry, zipFile);
   }
 
-  @Override
-  public void close() throws IOException {
-    zipFile.close();
-  }
-
-  private static final class ZipFileResource extends Resource {
+  private static final class ZipFileResource implements Resource {
     private final URL baseUrl;
     private URL url;
     private final ImmutableZipEntry entry;
     private final ImmutableZipFile file;
-    private final JarLoader jarLoader;
 
-    private ZipFileResource(@NotNull URL baseUrl, @NotNull ImmutableZipEntry entry, @NotNull ImmutableZipFile file, @NotNull JarLoader jarLoader) {
+    private ZipFileResource(@NotNull URL baseUrl, @NotNull ImmutableZipEntry entry, @NotNull ImmutableZipFile file) {
       this.baseUrl = baseUrl;
       this.entry = entry;
       this.file = file;
-      this.jarLoader = jarLoader;
+    }
+
+    @Override
+    public String toString() {
+      return "ZipFileResource(name=" + entry.getName() + ", file=" + file + ')';
     }
 
     @Override
@@ -144,17 +172,12 @@ public final class ZipResourceFile implements ResourceFile {
 
     @Override
     public @NotNull InputStream getInputStream() throws IOException {
-      return new ByteArrayInputStream(getBytes());
+      return entry.getInputStream(file);
     }
 
     @Override
     public byte @NotNull [] getBytes() throws IOException {
       return entry.getData(file);
-    }
-
-    @Override
-    public Map<Attribute, String> getAttributes() throws IOException {
-      return jarLoader.loadManifestAttributes(jarLoader.zipFile);
     }
   }
 
@@ -204,17 +227,12 @@ public final class ZipResourceFile implements ResourceFile {
 
     @Override
     public InputStream getInputStream() throws IOException {
-      return new ByteArrayInputStream(getData());
+      return entry.getInputStream(file);
     }
 
     @Override
     public int getContentLength() {
-      try {
-        return getData().length;
-      }
-      catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+      return entry.getUncompressedSize();
     }
   }
 }

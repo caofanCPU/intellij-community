@@ -1,9 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package training.learn.lesson.kimpl
 
-import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.actionSystem.DataProvider
+import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ApplicationNamesInfo
@@ -18,6 +16,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.Balloon
 import com.intellij.openapi.util.NlsActions
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.TextWithMnemonic
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowId
@@ -39,7 +38,6 @@ import training.learn.LessonsBundle
 import training.ui.LearningUiHighlightingManager
 import training.ui.LearningUiUtil
 import java.awt.Component
-import java.awt.Dimension
 import java.awt.Rectangle
 import java.awt.event.KeyEvent
 import java.lang.reflect.Modifier
@@ -72,6 +70,15 @@ object LessonUtil {
   fun TaskContext.restoreIfModifiedOrMoved(sample: LessonSample? = null) {
     proposeRestore {
       checkPositionOfEditor(sample ?: previous.sample)
+    }
+  }
+
+  /**
+   * Checks that user edited sample text, moved caret to any place of editor or changed selection
+   */
+  fun TaskContext.restoreIfModified(sample: LessonSample? = null) {
+    proposeRestore {
+      checkExpectedStateOfEditor(sample ?: previous.sample, false)
     }
   }
 
@@ -172,6 +179,10 @@ object LessonUtil {
     return "<raw_action>$keyStroke</raw_action>"
   }
 
+  fun rawKeyStroke(keyStroke: KeyStroke): String {
+    return "<raw_action>${KeymapUtil.getKeyStrokeText(keyStroke)}</raw_action>"
+  }
+
   fun rawEnter(): String = rawKeyStroke(KeyEvent.VK_ENTER)
 
   fun rawCtrlEnter(): String {
@@ -186,11 +197,11 @@ object LessonUtil {
     return x != 0
   }
 
-  fun LessonContext.highlightBreakpointGutter(logicalPosition: LogicalPosition) {
+  fun LessonContext.highlightBreakpointGutter(logicalPosition: () -> LogicalPosition) {
     task {
       triggerByPartOfComponent<EditorGutterComponentEx> l@{ ui ->
         if (CommonDataKeys.EDITOR.getData(ui as DataProvider) != editor) return@l null
-        val y = editor.visualLineToY(editor.logicalToVisualPosition(logicalPosition).line)
+        val y = editor.visualLineToY(editor.logicalToVisualPosition(logicalPosition()).line)
         return@l Rectangle(20, y, ui.width - 26, editor.lineHeight)
       }
     }
@@ -226,11 +237,15 @@ fun TaskRuntimeContext.lineWithBreakpoints(): Set<Int> {
   }.toSet()
 }
 
+val defaultRestoreDelay: Int
+  get() = Registry.intValue("ift.default.restore.delay")
+
 /**
  * @param [restoreId] where to restore, `null` means the previous task
  * @param [restoreRequired] returns true iff restore is needed
  */
-fun TaskContext.restoreAfterStateBecomeFalse(restoreId: TaskContext.TaskId? = null, restoreRequired: TaskRuntimeContext.() -> Boolean) {
+fun TaskContext.restoreAfterStateBecomeFalse(restoreId: TaskContext.TaskId? = null,
+                                             restoreRequired: TaskRuntimeContext.() -> Boolean) {
   var restoreIsPossible = false
   restoreState(restoreId) {
     val required = restoreRequired()
@@ -246,13 +261,10 @@ fun TaskRuntimeContext.closeAllFindTabs() {
   }
 }
 
-fun LessonContext.gotItTask(position: Balloon.Position, dimension: Dimension, @Nls text: TaskContext.() -> String) {
-  task {
-    val gotIt = CompletableFuture<Boolean>()
-    text(text(), LearningBalloonConfig(position, dimension) { gotIt.complete(true) })
-    addStep(gotIt)
-  }
-
+fun TaskContext.gotItStep(position: Balloon.Position, width: Int, @Nls text: String) {
+  val gotIt = CompletableFuture<Boolean>()
+  text(text, LearningBalloonConfig(position, width, false) { gotIt.complete(true) })
+  addStep(gotIt)
 }
 
 fun String.dropMnemonic(): String {
@@ -261,7 +273,8 @@ fun String.dropMnemonic(): String {
 
 val seconds01 = Timeout.timeout(1, TimeUnit.SECONDS)
 
-fun LessonContext.highlightButtonById(actionId: String) {
+fun LessonContext.highlightButtonById(actionId: String): CompletableFuture<Boolean> {
+  val feature: CompletableFuture<Boolean> = CompletableFuture()
   val needToFindButton = ActionManager.getInstance().getAction(actionId)
   prepareRuntimeTask {
     LearningUiHighlightingManager.clearHighlights()
@@ -271,13 +284,15 @@ fun LessonContext.highlightButtonById(actionId: String) {
         ui.action == needToFindButton && LessonUtil.checkToolbarIsShowing(ui)
       }
       invokeLater {
+        feature.complete(result.isNotEmpty())
         for (button in result) {
-          val options = LearningUiHighlightingManager.HighlightingOptions(clearPreviousHighlights = false)
+          val options = LearningUiHighlightingManager.HighlightingOptions(usePulsation = true, clearPreviousHighlights = false)
           LearningUiHighlightingManager.highlightComponent(button, options)
         }
       }
     }
   }
+  return feature
 }
 
 inline fun <reified ComponentType : Component> LessonContext.highlightAllFoundUi(

@@ -9,28 +9,25 @@ import com.intellij.util.ui.codereview.comment.wrapComponentUsingRoundedPanel
 import org.jetbrains.plugins.github.api.data.GHPullRequestReviewEvent
 import org.jetbrains.plugins.github.api.data.GHUser
 import org.jetbrains.plugins.github.api.data.request.GHPullRequestDraftReviewComment
+import org.jetbrains.plugins.github.api.data.request.GHPullRequestDraftReviewThread
 import org.jetbrains.plugins.github.i18n.GithubBundle
-import org.jetbrains.plugins.github.pullrequest.avatars.CachingGithubAvatarIconsProvider
 import org.jetbrains.plugins.github.pullrequest.data.provider.GHPRReviewDataProvider
 import org.jetbrains.plugins.github.pullrequest.ui.changes.GHPRCreateDiffCommentParametersHelper
-import org.jetbrains.plugins.github.util.GithubUIUtil
+import org.jetbrains.plugins.github.ui.avatars.GHAvatarIconsProvider
 import org.jetbrains.plugins.github.util.successOnEdt
 import javax.swing.JComponent
 
 class GHPRDiffEditorReviewComponentsFactoryImpl
 internal constructor(private val reviewDataProvider: GHPRReviewDataProvider,
                      private val createCommentParametersHelper: GHPRCreateDiffCommentParametersHelper,
-                     private val avatarIconsProviderFactory: CachingGithubAvatarIconsProvider.Factory,
+                     private val avatarIconsProvider: GHAvatarIconsProvider,
                      private val currentUser: GHUser)
   : GHPRDiffEditorReviewComponentsFactory {
 
   override fun createThreadComponent(thread: GHPRReviewThreadModel): JComponent =
-    wrapComponentUsingRoundedPanel { wrapper ->
-      val avatarIconsProvider = avatarIconsProviderFactory.create(GithubUIUtil.avatarSize, wrapper)
-      GHPRReviewThreadComponent.create(thread, reviewDataProvider, avatarIconsProvider, currentUser).apply {
-        border = JBUI.Borders.empty(8, 8)
-      }
-    }
+    GHPRReviewThreadComponent.create(thread, reviewDataProvider, avatarIconsProvider, currentUser).apply {
+      border = JBUI.Borders.empty(8, 8)
+    }.let(::wrapComponentUsingRoundedPanel)
 
   override fun createSingleCommentComponent(side: Side, line: Int, startLine: Int, hideCallback: () -> Unit): JComponent {
     val textFieldModel = GHSubmittableTextFieldModel {
@@ -56,8 +53,8 @@ internal constructor(private val reviewDataProvider: GHPRReviewDataProvider,
   override fun createNewReviewCommentComponent(side: Side, line: Int, startLine: Int, hideCallback: () -> Unit): JComponent {
     val textFieldModel = GHSubmittableTextFieldModel {
       val filePath = createCommentParametersHelper.filePath
+      val commitSha = createCommentParametersHelper.commitSha
       if (line == startLine) {
-        val commitSha = createCommentParametersHelper.commitSha
         val diffLine = createCommentParametersHelper.findPosition(side, line) ?: error("Can't determine comment position")
         reviewDataProvider.createReview(EmptyProgressIndicator(), null, null, commitSha,
                                         listOf(GHPullRequestDraftReviewComment(it, filePath, diffLine))).successOnEdt {
@@ -65,9 +62,11 @@ internal constructor(private val reviewDataProvider: GHPRReviewDataProvider,
         }
       }
       else {
-        reviewDataProvider.createReview(EmptyProgressIndicator(), it, line + 1, side, startLine + 1, filePath).successOnEdt {
-          hideCallback()
-        }
+        reviewDataProvider.createReview(EmptyProgressIndicator(), null, null, commitSha, null,
+                                        listOf(GHPullRequestDraftReviewThread(it, line + 1, filePath, side, startLine + 1, side)))
+          .successOnEdt {
+            hideCallback()
+          }
       }
     }
 
@@ -98,13 +97,10 @@ internal constructor(private val reviewDataProvider: GHPRReviewDataProvider,
     textFieldModel: GHSubmittableTextFieldModel,
     @NlsActions.ActionText actionName: String,
     hideCallback: () -> Unit
-  ): JComponent = wrapComponentUsingRoundedPanel { wrapper ->
-    val avatarIconsProvider = avatarIconsProviderFactory.create(GithubUIUtil.avatarSize, wrapper)
-
+  ): JComponent =
     GHSubmittableTextFieldFactory(textFieldModel).create(avatarIconsProvider, currentUser, actionName) {
       hideCallback()
     }.apply {
       border = JBUI.Borders.empty(8)
-    }
-  }
+    }.let(::wrapComponentUsingRoundedPanel)
 }

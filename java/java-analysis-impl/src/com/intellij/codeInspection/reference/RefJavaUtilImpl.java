@@ -2,6 +2,7 @@
 
 package com.intellij.codeInspection.reference;
 
+import com.intellij.codeInsight.daemon.impl.analysis.GenericsHighlightUtil;
 import com.intellij.java.analysis.JavaAnalysisBundle;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.psi.*;
@@ -17,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.uast.*;
 import org.jetbrains.uast.visitor.AbstractUastVisitor;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -54,6 +56,26 @@ public class RefJavaUtilImpl extends RefJavaUtil {
                          if (javaClass != null) {
                            final RefClassImpl refClass = (RefClassImpl)refFrom.getRefManager().getReference(javaClass.getOriginalElement());
                            refFrom.addReference(refClass, javaClass.getOriginalElement(), decl, false, true, null);
+                         }
+                         return false;
+                       }
+
+                       @Override
+                       public boolean visitElement(@NotNull UElement node) {
+                         UNamedExpression namedExpr = ObjectUtils.tryCast(node, UNamedExpression.class);
+                         if (namedExpr == null) return false;
+                         UAnnotation ann = ObjectUtils.tryCast(namedExpr.getUastParent(), UAnnotation.class);
+                         if (ann == null) return false;
+                         String annFqn = ann.getQualifiedName();
+                         if (annFqn == null) return false;
+                         PsiMethod annMethod = UastUtils.getAnnotationMethod(namedExpr);
+                         if (annMethod == null) return false;
+                         RefMethod annRefMethod = ObjectUtils.tryCast(refFrom.getRefManager().getReference(annMethod), RefMethod.class);
+                         if (annRefMethod == null) return false;
+                         RefJavaElementImpl annRefClass = ObjectUtils.tryCast(
+                           annRefMethod.getRefManager().getReference(annMethod.getContainingClass()), RefJavaElementImpl.class);
+                         if (annRefClass != null) {
+                           annRefClass.addReference(annRefMethod, annMethod.getOriginalElement(), decl, false, true, null);
                          }
                          return false;
                        }
@@ -576,6 +598,7 @@ public class RefJavaUtilImpl extends RefJavaUtil {
     if (body != null) {
       List<UExpression> statements =
         body instanceof UBlockExpression ? ((UBlockExpression)body).getExpressions() : Collections.singletonList(body);
+      if (statements.size() > 1) return false;
       for (UExpression expression : statements) {
         boolean isCallToSameSuper = false;
         if (expression instanceof UReturnExpression) {
@@ -594,17 +617,15 @@ public class RefJavaUtilImpl extends RefJavaUtil {
 
     if (hasStatements) {
       final PsiMethod[] superMethods = javaMethod.findSuperMethods();
-      int defaultCount = 0;
       for (PsiMethod superMethod : superMethods) {
         if (VisibilityUtil.compare(VisibilityUtil.getVisibilityModifier(superMethod.getModifierList()),
                                    VisibilityUtil.getVisibilityModifier(javaMethod.getModifierList())) > 0) {
           return false;
         }
-        if (superMethod.hasModifierProperty(PsiModifier.DEFAULT)) {
-          defaultCount++;
-        }
       }
-      if (defaultCount > 1) {
+      PsiClass aClass = javaMethod.getContainingClass();
+      if (aClass == null ||
+          GenericsHighlightUtil.getUnrelatedDefaultsMessage(aClass, Arrays.asList(superMethods), true) != null) {
         return false;
       }
     }

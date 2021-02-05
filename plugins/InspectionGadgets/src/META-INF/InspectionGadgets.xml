@@ -161,9 +161,9 @@
     <localInspection groupPath="Java" language="JAVA" shortName="ArrayHashCode" bundle="messages.InspectionGadgetsBundle" key="array.hash.code.display.name"
                      groupBundle="messages.InspectionsBundle" groupKey="group.names.probable.bugs" enabledByDefault="true" level="WARNING"
                      implementationClass="com.siyeh.ig.bugs.ArrayHashCodeInspection"/>
-    <localInspection groupPath="Java" language="JAVA" shortName="ArrayObjectsEquals" bundle="messages.InspectionGadgetsBundle"
-                     key="array.objects.equals.display.name" groupBundle="messages.InspectionsBundle" groupKey="group.names.probable.bugs"
-                     enabledByDefault="true" level="WARNING" implementationClass="com.siyeh.ig.bugs.ArrayObjectsEqualsInspection"/>
+    <localInspection groupPath="Java" language="JAVA" shortName="ArrayEqualsHashCode" bundle="messages.InspectionGadgetsBundle"
+                     key="array.equals.hashcode.display.name" groupBundle="messages.InspectionsBundle" groupKey="group.names.probable.bugs"
+                     enabledByDefault="true" level="WARNING" implementationClass="com.siyeh.ig.bugs.ArrayEqualsHashCodeInspection"/>
     <localInspection groupPath="Java" language="JAVA" shortName="AssertWithSideEffects" bundle="messages.InspectionGadgetsBundle"
                      key="assert.with.side.effects.display.name" groupBundle="messages.InspectionsBundle"
                      groupKey="group.names.probable.bugs" enabledByDefault="true" level="WARNING"
@@ -1286,10 +1286,6 @@
                      key="method.can.be.variable.arity.method.display.name" groupBundle="messages.InspectionsBundle"
                      groupKey="group.names.language.level.specific.issues.and.migration.aids5" enabledByDefault="true" level="INFORMATION"
                      implementationClass="com.siyeh.ig.migration.MethodCanBeVariableArityMethodInspection"/>
-    <localInspection groupPathKey="group.path.names.java.language.level.specific.issues.and.migration.aids" language="JAVA" suppressId="rawtypes" alternativeId="RawUseOfParameterized" shortName="RawUseOfParameterizedType" bundle="messages.InspectionGadgetsBundle"
-                     key="raw.use.of.parameterized.type.display.name" groupBundle="messages.InspectionsBundle"
-                     groupKey="group.names.language.level.specific.issues.and.migration.aids5" enabledByDefault="true" level="WARNING"
-                     implementationClass="com.siyeh.ig.migration.RawUseOfParameterizedTypeInspection"/>
     <localInspection groupPathKey="group.path.names.java.language.level.specific.issues.and.migration.aids" language="JAVA" suppressId="StringBufferMayBeStringBuilder" shortName="StringBufferReplaceableByStringBuilder"
                      bundle="messages.InspectionGadgetsBundle" key="string.buffer.replaceable.by.string.builder.display.name"
                      groupBundle="messages.InspectionsBundle" groupKey="group.names.language.level.specific.issues.and.migration.aids5"
@@ -1363,9 +1359,6 @@
                      key="assertequals.called.on.arrays.display.name" groupBundle="messages.InspectionsBundle"
                      groupKey="group.names.junit.issues" enabledByDefault="false" level="WARNING"
                      implementationClass="com.siyeh.ig.junit.AssertEqualsCalledOnArrayInspection"/>
-    <localInspection groupPath="Java" language="JAVA" shortName="JUnitRule" bundle="messages.InspectionGadgetsBundle"
-                     key="junit.rule.display.name" implementationClass="com.siyeh.ig.junit.JUnitRuleInspection"
-                     groupBundle="messages.InspectionsBundle" groupKey="group.names.junit.issues" enabledByDefault="false" level="WARNING"/>
     <localInspection groupPath="Java" language="JAVA" shortName="JUnitDatapoint" bundle="messages.InspectionGadgetsBundle"
                      key="junit.datapoint.display.name" implementationClass="com.siyeh.ig.junit.JUnitDatapointInspection"
                      groupBundle="messages.InspectionsBundle" groupKey="group.names.junit.issues" enabledByDefault="false" level="WARNING"/>

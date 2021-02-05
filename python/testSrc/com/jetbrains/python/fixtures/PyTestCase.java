@@ -565,12 +565,12 @@ public abstract class PyTestCase extends UsefulTestCase {
     Disposer.register(myFixture.getProjectDisposable(), () -> PsiTestUtil.removeExcludedRoot(module, dir));
   }
 
-  public <T> void assertContainsInRelativeOrder(@NotNull final Iterable<T> actual, final T @Nullable ... expected) {
+  public <T> void assertContainsInRelativeOrder(@NotNull final Iterable<? extends T> actual, final T @Nullable ... expected) {
     final List<T> actualList = Lists.newArrayList(actual);
     if (expected.length > 0) {
       T prev = expected[0];
       int prevIndex = actualList.indexOf(prev);
-      assertTrue(prevIndex >= 0);
+      assertTrue(prev + " is not found in " + actualList, prevIndex >= 0);
       for (int i = 1; i < expected.length; i++) {
         final T next = expected[i];
         final int nextIndex = actualList.indexOf(next);

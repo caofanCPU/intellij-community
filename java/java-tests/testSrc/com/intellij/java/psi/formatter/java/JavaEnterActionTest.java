@@ -613,4 +613,61 @@ public class JavaEnterActionTest extends AbstractEnterActionTestCase {
       "}"
     );
   }
+
+  public void testIdea192807() {
+    doTextTest(
+      "java",
+
+      "class MyTest\n" +
+      "{\n" +
+      "    private void foo() { String a = \"a\";<caret> String b = \"b\";}\n" +
+      "}",
+
+      "class MyTest\n" +
+      "{\n" +
+      "    private void foo() { String a = \"a\";\n" +
+      "        <caret>String b = \"b\";}\n" +
+      "}"
+    );
+  }
+
+  public void testIdea188397() {
+    doTextTest(
+      "java",
+
+      "public class Test {\n" +
+      "    public static void main(String[] args) {\n" +
+      "        System.out.println(\"Hello World!\");}<caret>\n" +
+      "}",
+
+      "public class Test {\n" +
+      "    public static void main(String[] args) {\n" +
+      "        System.out.println(\"Hello World!\");}\n" +
+      "    <caret>\n" +
+      "}"
+    );
+  }
+
+  public void testIdea163806() {
+    doTextTest(
+      "java",
+
+      "public class Test {\n" +
+      "    /**\n" +
+      "     * Something<br><caret>\n" +
+      "     */\n" +
+      "    void foo() {\n" +
+      "    }\n" +
+      "}",
+
+      "public class Test {\n" +
+      "    /**\n" +
+      "     * Something<br>\n" +
+      "     * <caret>\n" +
+      "     */\n" +
+      "    void foo() {\n" +
+      "    }\n" +
+      "}"
+    );
+  }
 }

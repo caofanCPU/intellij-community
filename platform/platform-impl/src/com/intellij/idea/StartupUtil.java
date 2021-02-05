@@ -37,7 +37,6 @@ import com.intellij.ui.AppUIUtil;
 import com.intellij.ui.IconManager;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.EnvironmentUtil;
-import com.intellij.util.PlatformUtils;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.concurrency.NonUrgentExecutor;
 import com.intellij.util.ui.EdtInvocationManager;
@@ -92,7 +91,7 @@ public final class StartupUtil {
   }
 
   // called by the app after startup
-  public static synchronized void addExternalInstanceListener(@Nullable Function<List<String>, Future<CliResult>> processor) {
+  public static synchronized void addExternalInstanceListener(@Nullable Function<? super List<String>, ? extends Future<CliResult>> processor) {
     if (ourSocketLock == null) throw new AssertionError("Not initialized yet");
     ourSocketLock.setCommandProcessor(processor);
   }
@@ -231,7 +230,13 @@ public final class StartupUtil {
     });
 
     Activity subActivity = StartUpMeasurer.startActivity("environment loading");
-    EnvironmentUtil.loadEnvironment(subActivity::end);
+    Path envReaderFile = PathManager.findBinFile(EnvironmentUtil.READER_FILE_NAME);
+    if (envReaderFile == null) {
+      subActivity.end();
+    }
+    else {
+      EnvironmentUtil.loadEnvironment(envReaderFile, subActivity::end);
+    }
 
     if (!configImportNeeded) {
       runPreAppClass(log);
@@ -240,7 +245,7 @@ public final class StartupUtil {
     startApp(args, initUiTask, log, configImportNeeded, appStarterFuture, euaDocument);
   }
 
-  private static @NotNull AppStarter getAppStarter(@NotNull Future<AppStarter> mainStartFuture)
+  private static @NotNull AppStarter getAppStarter(@NotNull Future<? extends AppStarter> mainStartFuture)
     throws InterruptedException, ExecutionException {
     Activity activity = mainStartFuture.isDone() ? null : StartUpMeasurer.startMainActivity("main class loading waiting");
     AppStarter result = mainStartFuture.get();
@@ -254,7 +259,7 @@ public final class StartupUtil {
                                @NotNull CompletableFuture<?> initUiTask,
                                @NotNull Logger log,
                                boolean configImportNeeded,
-                               @NotNull Future<AppStarter> appStarterFuture,
+                               @NotNull Future<? extends AppStarter> appStarterFuture,
                                @NotNull Future<@Nullable Object> euaDocument) throws Exception {
     if (!Main.isHeadless()) {
       Activity activity = StartUpMeasurer.startMainActivity("eua showing");
@@ -434,12 +439,6 @@ public final class StartupUtil {
         Main.showMessage(BootstrapBundle.message("bootstrap.error.title.jdk.required"), message, true);
         return false;
       }
-    }
-
-    if ("true".equals(System.getProperty("idea.64bit.check")) && !SystemInfoRt.is64Bit && PlatformUtils.isCidr()) {
-      Main.showMessage(BootstrapBundle.message("bootstrap.error.title.unsupported.jvm"),
-                       BootstrapBundle.message("bootstrap.error.message.use.64.jvm.instead.of.32"), true);
-      return false;
     }
 
     return true;
@@ -723,11 +722,14 @@ public final class StartupUtil {
     appStarter.beforeStartupWizard();
 
     String stepsDialogName = ApplicationInfoImpl.getShadowInstance().getCustomizeIDEWizardDialog();
+    if (System.getProperty("idea.temp.change.ide.wizard") != null) { // temporary until 211 release
+      stepsDialogName = System.getProperty("idea.temp.change.ide.wizard");
+    }
     if (stepsDialogName != null) {
       try {
         Class<?> dialogClass = Class.forName(stepsDialogName);
-        Constructor<?> constr = dialogClass.getConstructor(CustomizeIDEWizardStepsProvider.class, AppStarter.class, boolean.class, boolean.class);
-        ((CommonCustomizeIDEWizardDialog) constr.newInstance(provider, appStarter, true, false)).showIfNeeded();
+        Constructor<?> constr = dialogClass.getConstructor(AppStarter.class);
+        ((CommonCustomizeIDEWizardDialog) constr.newInstance(appStarter)).showIfNeeded();
       } catch (Throwable e) {
         Main.showMessage(BootstrapBundle.message("bootstrap.error.title.configuration.wizard.failed"), e);
         return;

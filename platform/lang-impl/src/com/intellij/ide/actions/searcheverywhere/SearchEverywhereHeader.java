@@ -43,7 +43,7 @@ import static com.intellij.ide.actions.searcheverywhere.statistics.SearchEverywh
 public class SearchEverywhereHeader {
 
   private final @NotNull Runnable myScopeChangedCallback;
-  private final Function<String, String> myShortcutSupplier;
+  private final Function<? super String, String> myShortcutSupplier;
 
   private final List<SETab> myTabs;
   private SETab mySelectedTab;
@@ -56,7 +56,7 @@ public class SearchEverywhereHeader {
 
   public SearchEverywhereHeader(@Nullable Project project,
                                 Map<SearchEverywhereContributor<?>, SearchEverywhereTabDescriptor> contributors,
-                                @NotNull Runnable scopeChangedCallback, Function<String, String> shortcutSupplier,
+                                @NotNull Runnable scopeChangedCallback, Function<? super String, String> shortcutSupplier,
                                 AnAction showInFindToolWindowAction, SearchEverywhereUI ui) {
     myScopeChangedCallback = scopeChangedCallback;
     myProject = project;
@@ -123,7 +123,7 @@ public class SearchEverywhereHeader {
   }
 
   @NotNull
-  private static JPanel createTabsPanel(List<SETab> tabs) {
+  private static JPanel createTabsPanel(List<? extends SETab> tabs) {
     JPanel contributorsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
     contributorsPanel.setOpaque(false);
     tabs.forEach(tab -> contributorsPanel.add(tab));
@@ -348,8 +348,9 @@ public class SearchEverywhereHeader {
     private final @NotNull @NonNls String id;
     private final @NotNull List<SearchEverywhereContributor<?>> contributors;
     private final List<AnAction> actions;
-    private final SearchEverywhereToggleAction everywhereAction;
+    private final @Nullable SearchEverywhereToggleAction everywhereAction;
     private final @Nullable PersistentSearchEverywhereContributorFilter<String> myContributorsFilter;
+    private final @Nullable PersistentSearchEverywhereContributorFilter<?> myFilterToReset;
 
     private boolean isSelected = false;
 
@@ -367,7 +368,12 @@ public class SearchEverywhereHeader {
       this.id = id;
       this.contributors = new ArrayList<>(contributors);
       this.actions = actions;
+
       everywhereAction = (SearchEverywhereToggleAction)ContainerUtil.find(actions, o -> o instanceof SearchEverywhereToggleAction);
+      myFilterToReset = actions.stream()
+        .filter(a -> a instanceof SearchEverywhereFiltersAction)
+        .findAny().map(a -> ((SearchEverywhereFiltersAction) a).getFilter())
+        .orElse(null);
     }
 
     public void setSelected(boolean selected) {
@@ -393,6 +399,22 @@ public class SearchEverywhereHeader {
       if (myContributorsFilter == null) return contributors;
 
       return ContainerUtil.filter(contributors, contributor -> myContributorsFilter.isSelected(contributor.getSearchProviderId()));
+    }
+
+    public boolean canClearFilter() {
+      return myFilterToReset != null && canClearFilter(myFilterToReset);
+    }
+
+    private static <T> boolean canClearFilter(@NotNull PersistentSearchEverywhereContributorFilter<T> filter) {
+      return filter.getAllElements().stream().anyMatch(o -> !filter.isSelected(o));
+    }
+
+    public void clearFilter() {
+      if (myFilterToReset != null) doClearFilter(myFilterToReset);
+    }
+
+    private static <T> void doClearFilter(@NotNull PersistentSearchEverywhereContributorFilter<T> filter) {
+      filter.getAllElements().forEach(s -> filter.setSelected(s, true));
     }
 
     @Override

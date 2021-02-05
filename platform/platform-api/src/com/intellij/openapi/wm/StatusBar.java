@@ -62,7 +62,7 @@ public interface StatusBar extends StatusBarInfo, Disposable {
    * @deprecated Use {@link StatusBarWidgetFactory}
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   void addWidget(@NotNull StatusBarWidget widget);
 
   /**
@@ -71,7 +71,7 @@ public interface StatusBar extends StatusBarInfo, Disposable {
    * @deprecated Use {@link StatusBarWidgetFactory}
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   void addWidget(@NotNull StatusBarWidget widget, @NonNls @NotNull String anchor);
 
   /**
@@ -94,14 +94,14 @@ public interface StatusBar extends StatusBarInfo, Disposable {
    * @deprecated Use {@link StatusBarWidgetFactory}
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   void addCustomIndicationComponent(@NotNull JComponent c);
 
   /**
    * @deprecated Use {@link StatusBarWidgetFactory}
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   void removeCustomIndicationComponent(@NotNull JComponent c);
 
   /**
@@ -129,15 +129,6 @@ public interface StatusBar extends StatusBarInfo, Disposable {
 
   @Nullable
   Project getProject();
-
-  /**
-   * @deprecated use {@link #createChild(IdeFrame)} instead
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  default StatusBar createChild() {
-    return this;
-  }
 
   final class Anchors {
     public static final String DEFAULT_ANCHOR = after(StandardWidgets.COLUMN_SELECTION_MODE_PANEL);

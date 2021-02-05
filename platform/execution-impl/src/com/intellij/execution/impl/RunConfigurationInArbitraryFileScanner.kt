@@ -2,16 +2,18 @@
 package com.intellij.execution.impl
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.impl.ProjectFileScanner
+import com.intellij.util.indexing.roots.IndexableFileScanner
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.PathUtil
+import com.intellij.util.indexing.roots.kind.ModuleRootOrigin
+import com.intellij.util.indexing.roots.kind.ProjectFileOrDirOrigin
 
 /**
  * This class doesn't push any file properties, it is used for scanning the project for `*.run.xml` files - files with run configurations.
  * This is to handle run configurations stored in arbitrary files within project content (not in .idea/runConfigurations or project.ipr file).
  */
-class RunConfigurationInArbitraryFileScanner : ProjectFileScanner {
+class RunConfigurationInArbitraryFileScanner : IndexableFileScanner {
   companion object {
     fun isFileWithRunConfigs(file: VirtualFile): Boolean {
       if (!file.isInLocalFileSystem || !StringUtil.endsWith(file.nameSequence, ".run.xml")) return false
@@ -26,12 +28,16 @@ class RunConfigurationInArbitraryFileScanner : ProjectFileScanner {
     fun isFileWithRunConfigs(path: String) = !path.contains("/.idea/") && PathUtil.getFileName(path).endsWith(".run.xml")
   }
 
-  override fun startSession(project: Project, singleRoot: VirtualFile?): ProjectFileScanner.ScanSession {
+  override fun startSession(project: Project): IndexableFileScanner.ScanSession {
     val runManagerImpl = RunManagerImpl.getInstanceImpl(project)
-    return ProjectFileScanner.ScanSession {
-      if (isFileWithRunConfigs(it)) {
-        runManagerImpl.updateRunConfigsFromArbitraryFiles(emptyList(), listOf(it.path))
-      }
+    return IndexableFileScanner.ScanSession {
+      if (it is ModuleRootOrigin || it is ProjectFileOrDirOrigin)
+        IndexableFileScanner.IndexableFileVisitor { fileOrDir ->
+          if (isFileWithRunConfigs(fileOrDir)) {
+            runManagerImpl.updateRunConfigsFromArbitraryFiles(emptyList(), listOf(fileOrDir.path))
+          }
+        }
+      else null
     }
   }
 }

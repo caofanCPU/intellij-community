@@ -502,6 +502,13 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
 
     @Override
+    public boolean isFinal(ItemWrapper wrapper) {
+      return myAction.myEditConfiguration
+             || wrapper.available(myAction.getExecutor())
+             || wrapper.getNextStep(myProject, myAction) == FINAL_CHOICE;
+    }
+
+    @Override
     public boolean hasSubstep(ItemWrapper selectedValue) {
       return selectedValue.hasActions();
     }
@@ -694,14 +701,14 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
 
     @Override
-    protected JComponent createItemComponent() {
+    protected JComponent layoutComponent(JComponent middleItemComponent) {
       if (myLabel == null) {
         myLabel = new JLabel();
         myLabel.setPreferredSize(new JLabel("8.").getPreferredSize());
       }
 
-      final JComponent result = super.createItemComponent();
-      result.add(myLabel, BorderLayout.WEST);
+      JComponent result = super.layoutComponent(middleItemComponent);
+      myLeftPart.add(myLabel, BorderLayout.WEST);
       return result;
     }
 
@@ -716,6 +723,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
       myLabel.setEnabled(isSelectable);
       myLabel.setIcon(null);
 
+      isSelected = isSelected && step.hasSubstep(value) && step.isFinal(value) && !isNextStepButtonSelected(list);
       if (isSelected) {
         setSelected(myLabel);
       }
@@ -1085,7 +1093,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     boolean isFirst = true;
     final ExecutionTarget activeTarget = ExecutionTargetManager.getActiveTarget(project);
     for (ExecutionTarget eachTarget : ExecutionTargetManager.getTargetsToChooseFor(project, selectedConfiguration.getConfiguration())) {
-      ItemWrapper<ExecutionTarget> itemWrapper = new ItemWrapper<ExecutionTarget>(eachTarget, isFirst) {
+      ItemWrapper<ExecutionTarget> itemWrapper = new ItemWrapper<>(eachTarget, isFirst) {
         @Override
         public Icon getIcon() {
           return getValue().getIcon();
@@ -1115,7 +1123,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
 
   @NotNull
   private static ItemWrapper<Void> createEditAction() {
-    ItemWrapper<Void> result = new ItemWrapper<Void>(null) {
+    ItemWrapper<Void> result = new ItemWrapper<>(null) {
       @Override
       public Icon getIcon() {
         return AllIcons.Actions.EditSource;

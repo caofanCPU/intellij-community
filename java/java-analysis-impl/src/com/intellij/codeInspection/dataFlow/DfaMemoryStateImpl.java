@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.codeInspection.dataFlow;
 
@@ -23,6 +23,7 @@ import com.intellij.util.containers.Stack;
 import gnu.trove.TIntArrayList;
 import gnu.trove.TIntObjectHashMap;
 import gnu.trove.TIntObjectProcedure;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -84,13 +85,25 @@ public class DfaMemoryStateImpl implements DfaMemoryState {
   @Override
   public @NotNull DfaMemoryStateImpl createClosureState() {
     DfaMemoryStateImpl copy = createCopy();
-    forRecordedVariableTypes((value, dfType) -> {
-      if (dfType instanceof DfReferenceType) {
-        copy.setDfType(value, ((DfReferenceType)dfType).dropLocality());
-      }
-    });
     copy.flushFields();
     copy.emptyStack();
+    for (DfaValue value : getFactory().getValues().toArray(new DfaValue[0])) {
+      if (value instanceof DfaVariableValue) {
+        DfType type = copy.getDfType(value);
+        if (type instanceof DfReferenceType) {
+          DfReferenceType newType = ((DfReferenceType)type).dropLocality();
+          if (newType.getMutability() == Mutability.MUST_NOT_MODIFY) {
+            // If we must not modify parameter inside the method body itself, 
+            // we may still be able to modify it inside nested closures, 
+            // as they could be executed later.
+            newType = newType.dropMutability();
+          }
+          if (newType != type) {
+            copy.setDfType(value, newType);
+          }
+        }
+      }
+    }
     return copy;
   }
 
@@ -1542,7 +1555,7 @@ public class DfaMemoryStateImpl implements DfaMemoryState {
    * thus sum of resulting class sizes is equal to the original class size
    */
   private @NotNull List<EqClass> splitEqClass(EqClass eqClass, DfaMemoryStateImpl other) {
-    TIntObjectHashMap<EqClass> groupsInClasses = new TIntObjectHashMap<>();
+    Int2ObjectOpenHashMap<EqClass> groupsInClasses = new Int2ObjectOpenHashMap<>();
     List<EqClass> groups = new ArrayList<>();
     for (DfaVariableValue value : eqClass.asList()) {
       int otherClass = other.getEqClassIndex(value);
@@ -1560,7 +1573,7 @@ public class DfaMemoryStateImpl implements DfaMemoryState {
       }
       list.add(value.getID());
     }
-    groupsInClasses.forEachValue(groups::add);
+    groups.addAll(groupsInClasses.values());
     return groups;
   }
 

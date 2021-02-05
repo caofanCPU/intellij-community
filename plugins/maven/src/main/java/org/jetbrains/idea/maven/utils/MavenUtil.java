@@ -29,6 +29,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
+import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.*;
@@ -52,6 +53,7 @@ import com.intellij.util.xml.NanoXmlBuilder;
 import com.intellij.util.xml.NanoXmlUtil;
 import com.intellij.workspaceModel.ide.impl.legacyBridge.LegacyBridgeProjectLifecycleListener;
 import gnu.trove.THashSet;
+import org.apache.lucene.search.Query;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jdom.Namespace;
@@ -102,7 +104,8 @@ import static com.intellij.openapi.util.text.StringUtil.*;
 import static com.intellij.util.xml.NanoXmlBuilder.stop;
 import static icons.ExternalSystemIcons.Task;
 
-public final class MavenUtil {
+public class MavenUtil {
+  public static final String INTELLIJ_PLUGIN_ID = "org.jetbrains.idea.maven";
   @ApiStatus.Experimental
   @NonNls public static final String MAVEN_NAME = "Maven";
   @NonNls public static final String MAVEN_NAME_UPCASE = MAVEN_NAME.toUpperCase();
@@ -134,20 +137,19 @@ public final class MavenUtil {
   public static Map<String, String> getPropertiesFromMavenOpts() {
     Map<String, String> res = ourPropertiesFromMvnOpts;
     if (res == null) {
-      String mavenOpts = System.getenv("MAVEN_OPTS");
-      if (mavenOpts != null) {
-        ParametersList mavenOptsList = new ParametersList();
-        mavenOptsList.addParametersString(mavenOpts);
-        res = mavenOptsList.getProperties();
-      }
-      else {
-        res = Collections.emptyMap();
-      }
-
+      res = parseMavenProperties(System.getenv("MAVEN_OPTS"));
       ourPropertiesFromMvnOpts = res;
     }
-
     return res;
+  }
+
+  public static @NotNull Map<String, String> parseMavenProperties(@Nullable String mavenOpts) {
+    if (mavenOpts != null) {
+      ParametersList mavenOptsList = new ParametersList();
+      mavenOptsList.addParametersString(mavenOpts);
+      return mavenOptsList.getProperties();
+    }
+    return Collections.emptyMap();
   }
 
 
@@ -235,7 +237,8 @@ public final class MavenUtil {
 
   public static boolean isNoBackgroundMode() {
     return (ApplicationManager.getApplication().isUnitTestMode()
-            || ApplicationManager.getApplication().isHeadlessEnvironment());
+            || ApplicationManager.getApplication().isHeadlessEnvironment() &&
+               !CoreProgressManager.shouldKeepTasksAsynchronousInHeadlessMode());
   }
 
   public static boolean isInModalContext() {
@@ -405,7 +408,7 @@ public final class MavenUtil {
     String text = fileTemplate.getText(allProperties);
     Pattern pattern = Pattern.compile("\\$\\{(.*)\\}");
     Matcher matcher = pattern.matcher(text);
-    StringBuffer builder = new StringBuffer();
+    StringBuilder builder = new StringBuilder();
     while (matcher.find()) {
       matcher.appendReplacement(builder, "\\$" + toUpperCase(matcher.group(1)) + "\\$");
     }
@@ -689,7 +692,8 @@ public final class MavenUtil {
     return str == null || str.length() == 0 || str.trim().length() == 0;
   }
 
-  public static boolean isValidMavenHome(File home) {
+  public static boolean isValidMavenHome(@Nullable File home) {
+    if (home == null) return false;
     return getMavenConfFile(home).exists();
   }
 
@@ -768,7 +772,8 @@ public final class MavenUtil {
     if (!isEmptyOrSpaces(overriddenLocalRepository)) result = new File(overriddenLocalRepository);
     if (result == null) {
       result = doResolveLocalRepository(resolveUserSettingsFile(overriddenUserSettingsFile),
-                                        resolveGlobalSettingsFile(overriddenMavenHome));
+                                        resolveGlobalSettingsFile(overriddenMavenHome),
+                                        resolveM2Dir());
     }
     try {
       return result.getCanonicalFile();
@@ -806,7 +811,7 @@ public final class MavenUtil {
   }
 
   @NotNull
-  public static File doResolveLocalRepository(@Nullable File userSettingsFile, @Nullable File globalSettingsFile) {
+  protected static File doResolveLocalRepository(@Nullable File userSettingsFile, @Nullable File globalSettingsFile, @NotNull File defaultM2Dir) {
     if (userSettingsFile != null) {
       final String fromUserSettings = getRepositoryFromSettings(userSettingsFile);
       if (!isEmpty(fromUserSettings)) {
@@ -821,7 +826,7 @@ public final class MavenUtil {
       }
     }
 
-    return new File(resolveM2Dir(), REPOSITORY_DIR);
+    return new File(defaultM2Dir, REPOSITORY_DIR);
   }
 
   @Nullable
@@ -1343,5 +1348,10 @@ public final class MavenUtil {
       }
     }
     throw new InvalidSdkException(name);
+  }
+
+  public static File getMavenPluginParentFile() {
+    File luceneLib = new File(PathUtil.getJarPathForClass(Query.class));
+    return luceneLib.getParentFile().getParentFile().getParentFile();
   }
 }

@@ -6,6 +6,7 @@ import com.intellij.codeInsight.NullabilityAnnotationInfo;
 import com.intellij.codeInsight.NullableNotNullManager;
 import com.intellij.codeInsight.daemon.impl.analysis.HighlightingFeature;
 import com.intellij.codeInspection.dataFlow.DfaPsiUtil;
+import com.intellij.core.JavaPsiBundle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
@@ -17,6 +18,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.intellij.psi.impl.light.LightJavaToken;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
@@ -110,8 +112,10 @@ final class VariableExtractor {
 
     highlight(var);
 
-    if (!(var instanceof PsiPatternVariable)) {
+    if (!(var instanceof PsiPatternVariable) || PsiUtil.isLanguageLevel16OrHigher(myContainer.getContainingFile())) {
       PsiUtil.setModifierProperty(var, PsiModifier.FINAL, mySettings.isDeclareFinal());
+    }
+    if (!(var instanceof PsiPatternVariable)) {
       if (mySettings.isDeclareVarType()) {
         PsiTypeElement typeElement = var.getTypeElement();
         LOG.assertTrue(typeElement != null);
@@ -238,7 +242,33 @@ final class VariableExtractor {
     if (parent == null) {
       throw new IllegalStateException("Unexpectedly anchor has no parent. Anchor class: " + anchor.getClass());
     }
+    tryFixSurroundContext(anchor);
     return parent.addBefore(declaration, anchor);
+  }
+
+  /**
+   * Try to fix the surrounding PSI before inserting the new declaration.
+   * Otherwise, the reparsed PSI may not contain the inserted declaration.
+   * @param anchor anchor to insert the declaration before
+   */
+  private static void tryFixSurroundContext(@NotNull PsiElement anchor) {
+    if (anchor.getParent() instanceof PsiCodeBlock && anchor.getParent().getParent() instanceof PsiClassInitializer) {
+      PsiElement element = anchor.getParent().getParent();
+      while (element != null) {
+        element = element.getPrevSibling();
+        if (element instanceof PsiErrorElement &&
+            ((PsiErrorElement)element).getErrorDescription().equals(JavaPsiBundle.message("expected.class.or.interface"))) {
+          PsiElement prev = PsiTreeUtil.skipWhitespacesAndCommentsBackward(element);
+          if (PsiUtil.isJavaToken(prev, JavaTokenType.RBRACE)) {
+            prev.delete();
+          }
+          if (prev instanceof PsiErrorElement &&
+              ((PsiErrorElement)prev).getErrorDescription().equals(JavaPsiBundle.message("expected.lbrace"))) {
+            prev.replace(new LightJavaToken(anchor.getManager(), "{"));
+          }
+        }
+      }
+    }
   }
 
   private static @NotNull PsiType stripNullabilityAnnotationsFromTargetType(@NotNull SmartTypePointer selectedType,
@@ -279,17 +309,25 @@ final class VariableExtractor {
         expr = (PsiExpression)anchor;
       }
     }
+    if (anchor instanceof PsiStatement) {
+      anchor = correctDueToSyntaxErrors(anchor);
+    }
     Set<PsiExpression> allOccurrences = StreamEx.of(occurrences).filter(PsiElement::isPhysical).append(expr).toSet();
     PsiExpression firstOccurrence = Collections.min(allOccurrences, Comparator.comparing(e -> e.getTextRange().getStartOffset()));
     if (HighlightingFeature.PATTERNS.isAvailable(anchor)) {
       PsiTypeCastExpression cast = ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(firstOccurrence), PsiTypeCastExpression.class);
-      if (cast != null && !(cast.getType() instanceof PsiPrimitiveType) &&
-          !(PsiUtil.skipParenthesizedExprUp(firstOccurrence.getParent()) instanceof PsiExpressionStatement)) {
-        PsiInstanceOfExpression candidate = InstanceOfUtils.findPatternCandidate(cast);
-        if (candidate != null && allOccurrences.stream()
-          .map(occ -> ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(occ), PsiTypeCastExpression.class))
-          .allMatch(occ -> occ != null && (occ == firstOccurrence || InstanceOfUtils.findPatternCandidate(occ) == candidate))) {
-          return candidate;
+      if (cast != null) {
+        PsiType castType = cast.getType();
+        PsiExpression operand = cast.getOperand();
+        if (castType != null && !(castType instanceof PsiPrimitiveType) && operand != null && operand.getType() != null && 
+            !(castType.isAssignableFrom(operand.getType())) &&
+            !(PsiUtil.skipParenthesizedExprUp(firstOccurrence.getParent()) instanceof PsiExpressionStatement)) {
+          PsiInstanceOfExpression candidate = InstanceOfUtils.findPatternCandidate(cast);
+          if (candidate != null && allOccurrences.stream()
+            .map(occ -> ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(occ), PsiTypeCastExpression.class))
+            .allMatch(occ -> occ != null && (occ == firstOccurrence || InstanceOfUtils.findPatternCandidate(occ) == candidate))) {
+            return candidate;
+          }
         }
       }
     }
@@ -297,9 +335,11 @@ final class VariableExtractor {
       PsiWhileStatement whileStatement = (PsiWhileStatement)anchor;
       PsiExpression condition = whileStatement.getCondition();
       if (condition != null && allOccurrences.stream().allMatch(occurrence -> PsiTreeUtil.isAncestor(whileStatement, occurrence, true))) {
-        if (firstOccurrence != null && PsiTreeUtil.isAncestor(condition, firstOccurrence, false)) {
+        if (firstOccurrence != null && PsiTreeUtil.isAncestor(condition, firstOccurrence, false) &&
+            !ExpressionUtils.isLoopInvariant(firstOccurrence, whileStatement)) {
           PsiPolyadicExpression polyadic = ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(condition), PsiPolyadicExpression.class);
-          if (polyadic != null && JavaTokenType.ANDAND.equals(polyadic.getOperationTokenType())) {
+          if (polyadic != null && !PsiTreeUtil.isAncestor(firstOccurrence, polyadic, false) && 
+              JavaTokenType.ANDAND.equals(polyadic.getOperationTokenType())) {
             PsiExpression operand = ContainerUtil.find(polyadic.getOperands(), op -> PsiTreeUtil.isAncestor(op, firstOccurrence, false));
             operand = PsiUtil.skipParenthesizedExprDown(operand);
             LOG.assertTrue(operand != null);
@@ -338,8 +378,34 @@ final class VariableExtractor {
     PsiElement child = locateAnchor(anchor);
     if (IntroduceVariableBase.isFinalVariableOnLHS(expr)) {
       child = child.getNextSibling();
+      if (child != null) {
+        child = correctDueToSyntaxErrors(child);
+      }
     }
     return child == null ? anchor : child;
+  }
+
+  private static @NotNull PsiElement correctDueToSyntaxErrors(@NotNull PsiElement anchor) {
+    while (true) {
+      PsiElement prevSibling = PsiTreeUtil.skipWhitespacesAndCommentsBackward(anchor);
+      PsiElement prevStatement = null;
+      if (prevSibling instanceof PsiErrorElement) {
+        prevStatement = PsiTreeUtil.getPrevSiblingOfType(prevSibling, PsiStatement.class);
+      }
+      else if (prevSibling instanceof PsiStatement) {
+        PsiElement lastChild = prevSibling;
+        while (lastChild != null && !(lastChild instanceof PsiErrorElement)) {
+          lastChild = lastChild.getLastChild();
+        }
+        if (lastChild != null) {
+          prevStatement = prevSibling;
+        }
+      }
+      if (prevStatement == null) break;
+      // Let's try to find more valid context to be able to reparse
+      anchor = prevStatement;
+    }
+    return anchor;
   }
 
   private static PsiElement locateAnchor(PsiElement child) {
@@ -365,7 +431,17 @@ final class VariableExtractor {
                                       final @NotNull IntroduceVariableSettings settings) {
     Computable<SmartPsiElementPointer<PsiVariable>> computation =
       new VariableExtractor(project, expr, editor, anchorStatement, occurrences, settings)::extractVariable;
+    PsiFile file = expr.getContainingFile();
     SmartPsiElementPointer<PsiVariable> pointer = ApplicationManager.getApplication().runWriteAction(computation);
-    return pointer != null ? pointer.getElement() : null;
+    if (pointer != null) {
+      PsiVariable var = pointer.getElement();
+      if (var == null) {
+        throw new RuntimeExceptionWithAttachments("Refactoring is interrupted due to syntax errors in the file",
+                                                  new Attachment("expression.txt", expr.getText()),
+                                                  new Attachment("source.java", file.getText()));
+      }
+      return var;
+    }
+    return null;
   }
 }

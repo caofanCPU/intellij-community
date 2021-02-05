@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.workspaceModel.storage
 
+import com.intellij.workspaceModel.storage.impl.ConsistencyCheckingMode
 import com.intellij.workspaceModel.storage.impl.WorkspaceEntityStorageBuilderImpl
 import com.intellij.workspaceModel.storage.url.MutableVirtualFileUrlIndex
 import com.intellij.workspaceModel.storage.url.VirtualFileUrl
@@ -35,6 +36,8 @@ interface WorkspaceEntity {
    * internal IDs of the corresponding entities.
    */
   fun hasEqualProperties(e: WorkspaceEntity): Boolean
+
+  fun <E : WorkspaceEntity> createReference(): EntityReference<E>
 }
 
 /**
@@ -135,6 +138,14 @@ interface WorkspaceEntityStorage {
   fun <E : WorkspaceEntity, R : WorkspaceEntity> referrers(e: E, entityClass: KClass<R>, property: KProperty1<R, EntityReference<E>>): Sequence<R>
   fun <E : WorkspaceEntityWithPersistentId, R : WorkspaceEntity> referrers(id: PersistentEntityId<E>, entityClass: Class<R>): Sequence<R>
   fun <E : WorkspaceEntityWithPersistentId> resolve(id: PersistentEntityId<E>): E?
+
+  /**
+   * Please select a name for your mapping in a form `<product_id>.<mapping_name>`.
+   * E.g.:
+   *  - intellij.modules.bridge
+   *  - intellij.facets.bridge
+   *  - rider.backend.id
+   */
   fun <T> getExternalMapping(identifier: String): ExternalEntityMapping<T>
   fun getVirtualFileUrlIndex(): VirtualFileUrlIndex
   fun entitiesBySource(sourceFilter: (EntitySource) -> Boolean): Map<EntitySource, Map<Class<out WorkspaceEntity>, List<WorkspaceEntity>>>
@@ -161,17 +172,14 @@ interface WorkspaceEntityStorageBuilder : WorkspaceEntityStorage, WorkspaceEntit
    */
   fun collectChanges(original: WorkspaceEntityStorage): Map<Class<*>, List<EntityChange<*>>>
 
-  // Reset all collected changes. TODO ugly!
-  // This method doesn't reset builder to it initial state, but just resets a changelog,
-  //   so next call to collectChanges will return empty list
-  fun resetChanges()
-
   fun toStorage(): WorkspaceEntityStorage
 
   companion object {
-    fun create(): WorkspaceEntityStorageBuilder = WorkspaceEntityStorageBuilderImpl.create()
+    @JvmStatic
+    fun create(): WorkspaceEntityStorageBuilder = WorkspaceEntityStorageBuilderImpl.create(ConsistencyCheckingMode.default())
 
-    fun from(storage: WorkspaceEntityStorage): WorkspaceEntityStorageBuilder = WorkspaceEntityStorageBuilderImpl.from(storage)
+    @JvmStatic
+    fun from(storage: WorkspaceEntityStorage): WorkspaceEntityStorageBuilder = WorkspaceEntityStorageBuilderImpl.from(storage, ConsistencyCheckingMode.default())
   }
 }
 
@@ -197,7 +205,15 @@ interface WorkspaceEntityStorageDiffBuilder {
   fun <T : WorkspaceEntity> changeSource(e: T, newSource: EntitySource): T
 
   fun addDiff(diff: WorkspaceEntityStorageDiffBuilder)
+
+  /**
+   * Please see [WorkspaceEntityStorage.getExternalMapping] for naming conventions
+   */
   fun <T> getExternalMapping(identifier: String): ExternalEntityMapping<T>
+
+  /**
+   * Please see [WorkspaceEntityStorage.getExternalMapping] for naming conventions
+   */
   fun <T> getMutableExternalMapping(identifier: String): MutableExternalEntityMapping<T>
   fun getVirtualFileUrlIndex(): VirtualFileUrlIndex
   fun getMutableVirtualFileUrlIndex(): MutableVirtualFileUrlIndex
@@ -206,6 +222,7 @@ interface WorkspaceEntityStorageDiffBuilder {
   val modificationCount: Long
 
   companion object {
+    @JvmStatic
     fun create(underlyingStorage: WorkspaceEntityStorage): WorkspaceEntityStorageDiffBuilder = WorkspaceEntityStorageBuilder.from(underlyingStorage)
   }
 }

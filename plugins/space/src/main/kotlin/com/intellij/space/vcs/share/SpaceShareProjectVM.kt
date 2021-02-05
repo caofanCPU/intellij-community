@@ -1,12 +1,10 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.share
 
 import circlet.client.api.PR_Project
 import circlet.client.api.Projects
 import circlet.client.pr
 import circlet.common.permissions.VcsAdmin
-import circlet.platform.api.batchAll
-import circlet.platform.api.map
 import circlet.platform.client.ConnectionStatus
 import circlet.platform.client.resolve
 import com.intellij.space.components.SpaceWorkspaceComponent
@@ -14,10 +12,12 @@ import com.intellij.space.messages.SpaceBundle
 import kotlinx.coroutines.CancellationException
 import libraries.coroutines.extra.LifetimeSource
 import org.jetbrains.annotations.Nls
+import runtime.batch.batchAll
+import runtime.batch.map
 import runtime.reactive.MutableProperty
 import runtime.reactive.awaitFirst
 import runtime.reactive.filter
-import runtime.reactive.mapInit
+import runtime.reactive.property.mapInit
 
 class SpaceShareProjectVM(val lifetime: LifetimeSource) {
   @Suppress("RemoveExplicitTypeArguments")

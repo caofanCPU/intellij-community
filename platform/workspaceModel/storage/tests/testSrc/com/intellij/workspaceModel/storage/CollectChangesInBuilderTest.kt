@@ -1,7 +1,6 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.workspaceModel.storage
 
-import com.intellij.workspaceModel.storage.impl.WorkspaceEntityStorageBuilderImpl
 import com.intellij.workspaceModel.storage.entities.*
 import com.intellij.workspaceModel.storage.entities.ModifiableSampleEntity
 import com.intellij.workspaceModel.storage.entities.ModifiableSecondSampleEntity
@@ -18,13 +17,13 @@ class CollectChangesInBuilderTest {
 
   @Before
   fun setUp() {
-    initialStorage = WorkspaceEntityStorageBuilderImpl.create().apply {
+    initialStorage = createEmptyBuilder().apply {
       addSampleEntity("initial")
       addEntity(ModifiableSecondSampleEntity::class.java, SampleEntitySource("test")) {
         intProperty = 1
       }
     }.toStorage()
-    builder = WorkspaceEntityStorageBuilderImpl.from(initialStorage)
+    builder = createBuilderFrom(initialStorage)
   }
 
   @Test
@@ -41,17 +40,6 @@ class CollectChangesInBuilderTest {
     val (change1, change2) = changes
     assertEquals("added", (change1 as EntityChange.Added).entity.stringProperty)
     assertEquals("initial", (change2 as EntityChange.Removed).entity.stringProperty)
-  }
-
-  @Test
-  fun `reset changes`() {
-    val baseModificationCount = builder.modificationCount
-    builder.addSampleEntity("added")
-    assertEquals(1, builder.collectChanges(initialStorage).values.flatten().size)
-    assertEquals(baseModificationCount + 1, builder.modificationCount)
-    builder.resetChanges()
-    assertEquals(baseModificationCount + 2, builder.modificationCount)
-    assertEquals(0, builder.collectChanges(initialStorage).values.flatten().size)
   }
 
   @Test

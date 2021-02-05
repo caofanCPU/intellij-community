@@ -7,9 +7,11 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.editor.impl.FontFamilyService;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.AbstractFontCombo;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
@@ -18,14 +20,19 @@ import org.jetbrains.annotations.Nullable;
 import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
-import java.util.*;
 import java.util.List;
+import java.util.*;
 
 public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontItem> {
+  private final Dimension myItemSize;
+  private final boolean myIsPrimary;
 
-  protected FontFamilyCombo(boolean withNoneItem) {
-    super(new MyModel(withNoneItem));
+  protected FontFamilyCombo(boolean isPrimary) {
+    super(new MyModel(!isPrimary));
+    myIsPrimary = isPrimary;
     setRenderer(new MyListCellRenderer());
+    FontMetrics fontMetrics = getFontMetrics(getFont());
+    myItemSize = new Dimension(fontMetrics.stringWidth(StringUtil.repeat("M", 20)), fontMetrics.getHeight());
   }
 
   @Override
@@ -65,6 +72,8 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
   protected static class MyFontItem {
     private @NotNull final String myFamilyName;
     private boolean myIsMonospaced;
+    private boolean myFontCanDisplayName;
+    private @Nullable Font myFont;
 
     public MyFontItem(@NotNull String familyName, boolean isMonospaced) {
       myFamilyName = familyName;
@@ -98,17 +107,20 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
 
   private static class MyModel extends AbstractListModel<MyFontItem> implements ComboBoxModel<MyFontItem> {
 
+    /**
+     * The list contains bundled fonts and platform-specific default fonts specified in
+     * {@link com.intellij.openapi.editor.colors.FontPreferences}.
+     * It is used for quick filtering of monospaced fonts before the actual list is shown.
+     */
     private final static String[] KNOWN_MONOSPACED_FAMILIES = {
+      "Consolas",
+      "DejaVu Sans Mono",
+      "Droid Sans Mono",
       "JetBrains Mono",
       "Fira Code",
-      "Ubuntu Mono",
-      "Hack",
+      "Inconsolata",
+      "Menlo",
       "Monospaced",
-      "Dialog Input",
-      "Liberation Mono",
-      "Droid Sans Mono",
-      "Noto Mono",
-      "Noto Sans Mono",
       "Source Code Pro"
     };
 
@@ -138,7 +150,7 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
         ApplicationBundle.message("settings.editor.font.proportional"), false);
       myItems.add(myProportionalSeparatorItem);
       Collections.sort(myItems, new MyFontItemComparator());
-      retrieveMonospacedInfo();
+      retrieveFontInfo();
     }
 
     @Override
@@ -173,12 +185,14 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
       return myItems.get(index);
     }
 
-    private void retrieveMonospacedInfo() {
+    private void retrieveFontInfo() {
       ApplicationManager.getApplication().executeOnPooledThread(() -> {
         for (MyFontItem item : myItems) {
           if (FontFamilyService.isMonospaced(item.myFamilyName)) {
             myMonospacedFamilies.add(item.myFamilyName);
           }
+          item.myFont = JBUI.Fonts.create(item.myFamilyName, JBUI.Fonts.label().getSize());
+          item.myFontCanDisplayName = item.myFont.canDisplayUpTo(item.myFamilyName) == -1;
         }
         updateMonospacedInfo();
       });
@@ -217,7 +231,7 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
     }
   }
 
-  private static class MyListCellRenderer extends ColoredListCellRenderer<MyFontItem> {
+  private class MyListCellRenderer extends ColoredListCellRenderer<MyFontItem> {
 
     @Override
     public Component getListCellRendererComponent(JList<? extends MyFontItem> list,
@@ -229,10 +243,24 @@ public class FontFamilyCombo extends AbstractFontCombo<FontFamilyCombo.MyFontIte
     }
 
     @Override
+    public @NotNull Dimension getPreferredSize() {
+      return myItemSize;
+    }
+
+    @Override
     protected void customizeCellRenderer(@NotNull JList<? extends MyFontItem> list,
                                          MyFontItem value, int index, boolean selected, boolean hasFocus) {
       if (value != null) {
-        append(value.getFamilyName());
+        SimpleTextAttributes attributes = SimpleTextAttributes.REGULAR_ATTRIBUTES;
+        if (value.myFont != null) {
+          if (value.myFontCanDisplayName) {
+            setFont(value.myFont);
+          }
+          else if (myIsPrimary) {
+            attributes = SimpleTextAttributes.EXCLUDED_ATTRIBUTES;
+          }
+        }
+        append(value.getFamilyName(), attributes);
       }
     }
   }

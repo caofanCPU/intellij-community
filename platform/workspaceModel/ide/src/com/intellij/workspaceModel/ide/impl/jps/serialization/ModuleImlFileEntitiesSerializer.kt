@@ -15,11 +15,14 @@ import com.intellij.util.io.exists
 import com.intellij.util.isEmpty
 import com.intellij.workspaceModel.ide.*
 import com.intellij.workspaceModel.ide.impl.virtualFile
-import com.intellij.workspaceModel.storage.*
+import com.intellij.workspaceModel.storage.EntitySource
+import com.intellij.workspaceModel.storage.WorkspaceEntity
+import com.intellij.workspaceModel.storage.WorkspaceEntityStorage
+import com.intellij.workspaceModel.storage.WorkspaceEntityStorageBuilder
 import com.intellij.workspaceModel.storage.bridgeEntities.*
+import com.intellij.workspaceModel.storage.impl.url.toVirtualFileUrl
 import com.intellij.workspaceModel.storage.url.VirtualFileUrl
 import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
-import com.intellij.workspaceModel.storage.impl.url.toVirtualFileUrl
 import org.jdom.Attribute
 import org.jdom.Element
 import org.jdom.JDOMException
@@ -29,13 +32,9 @@ import org.jetbrains.jps.model.serialization.facet.JpsFacetSerializer
 import org.jetbrains.jps.model.serialization.java.JpsJavaModelSerializerExtension.*
 import org.jetbrains.jps.model.serialization.module.JpsModuleRootModelSerializer.*
 import org.jetbrains.jps.util.JpsPathUtil
-import java.io.IOException
 import java.io.StringReader
 import java.nio.file.Paths
 import java.util.*
-import kotlin.Comparator
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
 
 private const val MODULE_ROOT_MANAGER_COMPONENT_NAME = "NewModuleRootManager"
 private const val URL_ATTRIBUTE = "url"
@@ -248,7 +247,8 @@ internal open class ModuleImlFileEntitiesSerializer(internal val modulePath: Mod
     }
 
     fun Element.isExported() = getAttributeValue(EXPORTED_ATTRIBUTE) != null
-    val moduleLibraryNames = mutableListOf<String>()
+    val moduleLibraryNames = mutableSetOf<String>()
+    var nextUnnamedLibraryIndex = 1
     val dependencyItems = rootManagerElement.getChildrenAndDetach(ORDER_ENTRY_TAG).mapTo(ArrayList()) { dependencyElement ->
       when (dependencyElement.getAttributeValue(TYPE_ATTRIBUTE)) {
         SOURCE_FOLDER_TYPE -> ModuleDependencyItem.ModuleSourceDependency
@@ -265,9 +265,8 @@ internal open class ModuleImlFileEntitiesSerializer(internal val modulePath: Mod
           val libraryElement = dependencyElement.getChild(LIBRARY_TAG)!!
           // TODO. Probably we want a fixed name based on hashed library roots
           val nameAttributeValue = libraryElement.getAttributeValue(NAME_ATTRIBUTE)
-          val name = generateLibraryEntityName(nameAttributeValue) { nameToCheck ->
-            moduleLibraryNames.contains(nameToCheck)
-          }
+          val originalName = nameAttributeValue ?: "$UNNAMED_LIBRARY_NAME_PREFIX${nextUnnamedLibraryIndex++}"
+          val name = generateUniqueLibraryName(originalName) { it in moduleLibraryNames }
           moduleLibraryNames.add(name)
           val tableId = LibraryTableId.ModuleLibraryTableId(moduleEntity.persistentId())
           loadLibrary(name, libraryElement, tableId, builder, entitySource, virtualFileManager)
@@ -593,6 +592,8 @@ internal open class ModuleImlFileEntitiesSerializer(internal val modulePath: Mod
   override val additionalEntityTypes: List<Class<out WorkspaceEntity>>
     get() = listOf(SourceRootOrderEntity::class.java)
 
+  override fun toString(): String = "ModuleImlFileEntitiesSerializer($fileUrl)"
+
   companion object {
     private val LOG = logger<ModuleImlFileEntitiesSerializer>()
 
@@ -706,6 +707,8 @@ internal open class ModuleListSerializerImpl(override val fileUrl: String,
 
   private fun getModuleFileUrl(source: JpsFileEntitySource.FileInDirectory,
                                module: ModuleEntity) = source.directory.url + "/" + module.name + ".iml"
+
+  override fun toString(): String = "ModuleListSerializerImpl($fileUrl)"
 }
 
 fun storeSourceRootsOrder(orderOfItems: List<VirtualFileUrl>,

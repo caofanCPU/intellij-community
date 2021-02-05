@@ -18,22 +18,21 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.ExecutorService;
 
 class PersistentFSConnector {
   private static final Logger LOG = Logger.getInstance(PersistentFSConnector.class);
   private static final int MAX_INITIALIZATION_ATTEMPTS = 10;
 
-  static @NotNull PersistentFSConnection connect(@NotNull String cachesDir, int version) {
+  static @NotNull PersistentFSConnection connect(@NotNull String cachesDir, int version, boolean useContentHashes) {
     return FSRecords.writeAndHandleErrors(() -> {
-      return init(cachesDir, version);
+      return init(cachesDir, version, useContentHashes);
     });
   }
 
-  private static @NotNull PersistentFSConnection init(@NotNull String cachesDir, int expectedVersion) {
+  private static @NotNull PersistentFSConnection init(@NotNull String cachesDir, int expectedVersion, boolean useContentHashes) {
     Exception exception = null;
     for (int i = 0; i < MAX_INITIALIZATION_ATTEMPTS; i++) {
-      Pair<PersistentFSConnection, Exception> pair = tryInit(cachesDir, expectedVersion);
+      Pair<PersistentFSConnection, Exception> pair = tryInit(cachesDir, expectedVersion, useContentHashes);
       exception = pair.getSecond();
       if (exception == null) {
         return pair.getFirst();
@@ -43,7 +42,8 @@ class PersistentFSConnector {
   }
 
   private static @NotNull Pair<PersistentFSConnection, Exception> tryInit(@NotNull String cachesDir,
-                                                                          int expectedVersion) {
+                                                                          int expectedVersion,
+                                                                          boolean useContentHashes) {
     Storage attributes = null;
     RefCountingStorage contents = null;
     PersistentFSRecordsStorage records = null;
@@ -90,17 +90,13 @@ class PersistentFSConnector {
         }
       };
 
-      contents = new RefCountingStorage(contentsFile, CapacityAllocationPolicy.FIVE_PERCENT_FOR_GROWTH, FSRecords.useCompressionUtil) {
-        @NotNull
-        @Override
-        protected ExecutorService createExecutor() {
-          return SequentialTaskExecutor.createSequentialApplicationPoolExecutor("FSRecords Pool");
-        }
-      };
+      contents = new RefCountingStorage(contentsFile,
+                                        CapacityAllocationPolicy.FIVE_PERCENT_FOR_GROWTH,
+                                        SequentialTaskExecutor.createSequentialApplicationPoolExecutor("FSRecords Content Write Pool"),
+                                        FSRecords.useCompressionUtil);
 
       // sources usually zipped with 4x ratio
-      contentHashesEnumerator =
-        FSRecords.WE_HAVE_CONTENT_HASHES ? new ContentHashEnumerator(contentsHashesFile, storageLockContext) : null;
+      contentHashesEnumerator = useContentHashes ? new ContentHashEnumerator(contentsHashesFile, storageLockContext) : null;
 
       boolean aligned = PagedFileStorage.BUFFER_SIZE % PersistentFSRecordsStorage.RECORD_SIZE == 0;
       if (!aligned) {
@@ -194,7 +190,7 @@ class PersistentFSConnector {
 
     int count = fileLength / PersistentFSRecordsStorage.RECORD_SIZE;
     for (int n = 2; n < count; n++) {
-      if (BitUtil.isSet(records.doGetFlags(n), FSRecords.FREE_RECORD_FLAG)) {
+      if (BitUtil.isSet(records.doGetFlags(n), PersistentFSRecordAccessor.FREE_RECORD_FLAG)) {
         freeRecords.add(n);
       }
     }

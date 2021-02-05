@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.dataFlow.types;
 
 import com.intellij.openapi.util.Pair;
@@ -19,7 +19,7 @@ import org.jetbrains.plugins.groovy.lang.psi.controlFlow.impl.ResolvedVariableDe
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.DFAEngine;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.DFAType;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.reachingDefs.DefinitionMap;
-import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
+import org.jetbrains.plugins.groovy.lang.psi.util.CompileStaticUtil;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,7 +37,7 @@ import static org.jetbrains.plugins.groovy.util.GraphKt.findNodesOutsideCycles;
 import static org.jetbrains.plugins.groovy.util.GraphKt.mapGraph;
 
 final class InferenceCache {
-  private final GrControlFlowOwner myScope;
+  private final @NotNull GrControlFlowOwner myScope;
   private final Instruction[] myFlow;
   private final Map<PsiElement, List<Instruction>> myFromByElements;
 
@@ -148,7 +148,12 @@ final class InferenceCache {
     LinkedList<Pair<Instruction, VariableDescriptor>> queue = new LinkedList<>();
     queue.add(Pair.create(instruction, descriptor));
     Set<Instruction> dependentOnSharedVariables = new LinkedHashSet<>();
-    List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions = getClosureInstructionsWithForeigns();
+    List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions;
+    if (FunctionalExpressionFlowUtil.isNestedFlowProcessingAllowed()) {
+      closureInstructions = getClosureInstructionsWithForeigns();
+    } else {
+      closureInstructions = emptyList();
+    }
 
     while (!queue.isEmpty()) {
       Pair<Instruction, VariableDescriptor> pair = queue.removeFirst();
@@ -179,7 +184,7 @@ final class InferenceCache {
   }
 
   private List<Pair<Instruction, Set<? extends VariableDescriptor>>> getClosureInstructionsWithForeigns() {
-    if (PsiUtil.isCompileStatic(myScope)) {
+    if (CompileStaticUtil.isCompileStatic(myScope)) {
       return emptyList();
     }
     List<Pair<Instruction, Set<? extends VariableDescriptor>>> closureInstructions = new ArrayList<>();
@@ -190,8 +195,7 @@ final class InferenceCache {
         if (owner == null) {
           continue;
         }
-        Set<ResolvedVariableDescriptor> foreignVariables =
-          ControlFlowUtils.getForeignVariableDescriptors(owner, ReadWriteVariableInstruction::isWrite);
+        Set<ResolvedVariableDescriptor> foreignVariables = ControlFlowUtils.getOverwrittenForeignVariableDescriptors(owner);
         closureInstructions.add(Pair.create(closureInstruction, foreignVariables));
       }
     }

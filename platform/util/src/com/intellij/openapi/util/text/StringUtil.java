@@ -32,12 +32,14 @@ import java.util.stream.Collectors;
 //TeamCity inherits StringUtil: do not add private constructors!!!
 @SuppressWarnings("MethodOverridesStaticMethodOfSuperclass")
 public class StringUtil extends StringUtilRt {
-  @SuppressWarnings("SpellCheckingInspection") private static final String VOWELS = "aeiouy";
-  private static final Pattern EOL_SPLIT_KEEP_SEPARATORS = Pattern.compile("(?<=(\r\n|\n))|(?<=\r)(?=[^\n])");
-  private static final Pattern EOL_SPLIT_PATTERN = Pattern.compile(" *(\r|\n|\r\n)+ *");
-  private static final Pattern EOL_SPLIT_PATTERN_WITH_EMPTY = Pattern.compile(" *(\r|\n|\r\n) *");
-  private static final Pattern EOL_SPLIT_DONT_TRIM_PATTERN = Pattern.compile("(\r|\n|\r\n)+");
   public static final String ELLIPSIS = "\u2026";
+
+  private static final class Splitters {
+    private static final Pattern EOL_SPLIT_KEEP_SEPARATORS = Pattern.compile("(?<=(\r\n|\n))|(?<=\r)(?=[^\n])");
+    private static final Pattern EOL_SPLIT_PATTERN = Pattern.compile(" *(\r|\n|\r\n)+ *");
+    private static final Pattern EOL_SPLIT_PATTERN_WITH_EMPTY = Pattern.compile(" *(\r|\n|\r\n) *");
+    private static final Pattern EOL_SPLIT_DONT_TRIM_PATTERN = Pattern.compile("(\r|\n|\r\n)+");
+  }
 
   /**
    * @return a lightweight CharSequence which results from replacing {@code [start, end)} range in the {@code charSeq} with {@code replacement}.
@@ -93,7 +95,7 @@ public class StringUtil extends StringUtilRt {
 
     private void handleTag(@NotNull HTML.Tag tag) {
       if (tag.breaksFlow() && myBuffer.length() > 0) {
-        myBuffer.append(SystemProperties.getLineSeparator());
+        myBuffer.append(System.lineSeparator());
       }
     }
 
@@ -200,9 +202,9 @@ public class StringUtil extends StringUtilRt {
   }
 
   @Contract(pure = true)
-  public static int lastIndexOfIgnoreCase(@NotNull String where, char what, int fromIndex) {
+  public static int lastIndexOfIgnoreCase(@NotNull String where, char c, int fromIndex) {
     for (int i = Math.min(fromIndex, where.length() - 1); i >= 0; i--) {
-      if (charsEqualIgnoreCase(where.charAt(i), what)) {
+      if (charsEqualIgnoreCase(where.charAt(i), c)) {
         return i;
       }
     }
@@ -470,16 +472,6 @@ public class StringUtil extends StringUtilRt {
   private static final String[] ourOtherNonCapitalizableWords = {
     "iOS", "iPhone", "iPad", "iMac"
   };
-
-  /**
-   * @deprecated Use {@link #isPreposition(String, int, int, String[])}.
-   */
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  @Deprecated
-  @Contract(pure = true)
-  public static boolean isPreposition(@NotNull String s, int firstChar, int lastChar) {
-    return isPreposition(s, firstChar, lastChar, ourPrepositions);
-  }
 
   @Contract(pure = true)
   public static boolean isPreposition(@NotNull String s, int firstChar, int lastChar, String @NotNull [] prepositions) {
@@ -779,7 +771,7 @@ public class StringUtil extends StringUtilRt {
 
   @Contract(pure = true)
   public static boolean isVowel(char c) {
-    return VOWELS.indexOf(c) >= 0;
+    return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' || c == 'y';
   }
 
   /**
@@ -2129,15 +2121,6 @@ public class StringUtil extends StringUtilRt {
     return escaped;
   }
 
-  /**
-   * @deprecated Use {@link #replace(String, List, List)}
-   */
-  @Deprecated
-  @Contract(pure = true)
-  public static @NotNull String replace(@NotNull String text, String @NotNull [] from, String @NotNull [] to) {
-    return replace(text, Arrays.asList(from), Arrays.asList(to));
-  }
-
   @Contract(pure = true)
   public static @NotNull String replace(@NotNull String text, @NotNull List<String> from, @NotNull List<String> to) {
     assert from.size() == to.size();
@@ -2502,12 +2485,12 @@ public class StringUtil extends StringUtilRt {
    */
   @Contract(pure = true)
   public static String @NotNull [] splitByLines(@NotNull String string, boolean excludeEmptyStrings) {
-    return (excludeEmptyStrings ? EOL_SPLIT_PATTERN : EOL_SPLIT_PATTERN_WITH_EMPTY).split(string);
+    return (excludeEmptyStrings ? Splitters.EOL_SPLIT_PATTERN : Splitters.EOL_SPLIT_PATTERN_WITH_EMPTY).split(string);
   }
 
   @Contract(pure = true)
   public static String @NotNull [] splitByLinesDontTrim(@NotNull String string) {
-    return EOL_SPLIT_DONT_TRIM_PATTERN.split(string);
+    return Splitters.EOL_SPLIT_DONT_TRIM_PATTERN.split(string);
   }
 
   /**
@@ -2526,7 +2509,7 @@ public class StringUtil extends StringUtilRt {
    */
   @Contract(pure = true)
   public static String @NotNull [] splitByLinesKeepSeparators(@NotNull String string) {
-    return EOL_SPLIT_KEEP_SEPARATORS.split(string);
+    return Splitters.EOL_SPLIT_KEEP_SEPARATORS.split(string);
   }
 
   @Contract(pure = true)
@@ -3112,13 +3095,6 @@ public class StringUtil extends StringUtilRt {
       bytes[i / 2] = (byte)((Character.digit(str.charAt(i), 16) << 4) + Character.digit(str.charAt(i + 1), 16));
     }
     return bytes;
-  }
-
-  /** @deprecated use {@link #startsWithConcatenation(String, String...)} */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  public static boolean startsWithConcatenationOf(@NotNull String string, @NotNull String firstPrefix, @NotNull String secondPrefix) {
-    return startsWithConcatenation(string, firstPrefix, secondPrefix);
   }
 
   /**

@@ -4,13 +4,13 @@ package com.intellij.ide.util;
 import com.intellij.CommonBundle;
 import com.intellij.ide.GeneralSettings;
 import com.intellij.ide.IdeBundle;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
@@ -59,7 +59,7 @@ public final class TipDialog extends DialogWrapper {
 
   @Override
   protected Action @NotNull [] createActions() {
-    if (ApplicationManager.getApplication().isInternal()) {
+    if (Registry.is("ide.show.open.button.in.tip.dialog")) {
       return new Action[]{new OpenTipsAction(), myTipPanel.myPreviousTipAction, myTipPanel.myNextTipAction, getCancelAction()};
     }
     return new Action[]{myTipPanel.myPreviousTipAction, myTipPanel.myNextTipAction, getCancelAction()};
@@ -95,21 +95,13 @@ public final class TipDialog extends DialogWrapper {
   }
 
   public static void showForProject(@Nullable Project project) {
-    createForProject(project);
-    ourInstance.show();
-  }
-
-  /**
-   * @deprecated Use {@link #showForProject(Project)} instead
-   */
-  @Deprecated
-  public static TipDialog createForProject(@Nullable Project project) {
     Window w = WindowManagerEx.getInstanceEx().suggestParentWindow(project);
     if (w == null) w = WindowManagerEx.getInstanceEx().findVisibleFrame();
     if (ourInstance != null && ourInstance.isVisible()) {
       ourInstance.dispose();
     }
-    return ourInstance = new TipDialog(w);
+    ourInstance = new TipDialog(w);
+    ourInstance.show();
   }
 
   public static void hideForProject(@Nullable Project project) {

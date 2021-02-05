@@ -796,7 +796,7 @@ public final class HighlightMethodUtil {
     PermuteArgumentsFix.registerFix(info, methodCall, candidates, fixRange);
     WrapExpressionFix.registerWrapAction(candidates, list.getExpressions(), info, fixRange);
     registerChangeParameterClassFix(methodCall, list, info);
-    if (candidates.length == 0) {
+    if (candidates.length == 0 && info != null) {
       UnresolvedReferenceQuickFixProvider.registerReferenceFixes(methodCall.getMethodExpression(), new QuickFixActionRegistrarImpl(info));
     }
     return info;
@@ -2040,7 +2040,7 @@ public final class HighlightMethodUtil {
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createDeleteFix(typeParameterList.getTypeParameters()));
       return info;
     }
-    if (method.isConstructor() && PsiUtil.getLanguageLevel(method) != LanguageLevel.JDK_14_PREVIEW) {
+    if (method.isConstructor()) {
       AccessModifier modifier = AccessModifier.fromModifierList(method.getModifierList());
       PsiModifierList classModifierList = Objects.requireNonNull(method.getContainingClass()).getModifierList();
       if (classModifierList != null) {

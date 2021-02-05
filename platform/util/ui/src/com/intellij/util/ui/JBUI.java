@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
 import com.intellij.icons.AllIcons;
@@ -33,7 +33,6 @@ import java.lang.ref.WeakReference;
  */
 @SuppressWarnings("UseJBColor")
 public class JBUI {
-
   /**
    * @deprecated use {@link JBUIScale#sysScale()}
    */
@@ -48,14 +47,6 @@ public class JBUI {
   @Deprecated
   public static float sysScale(@Nullable Graphics2D g) {
     return JBUIScale.sysScale(g);
-  }
-
-  /**
-   * @deprecated use {@link JBUIScale#sysScale(Component)}
-   */
-  @Deprecated
-  public static float sysScale(@Nullable Component comp) {
-    return JBUIScale.sysScale(comp);
   }
 
   /**
@@ -86,14 +77,6 @@ public class JBUI {
    */
   public static float pixScale(@Nullable Component comp) {
     return pixScale(comp != null ? comp.getGraphicsConfiguration() : null);
-  }
-
-  /**
-   * @deprecated use {@link JBUIScale#setUserScaleFactor(float)}
-   */
-  @Deprecated
-  public static float setUserScaleFactor(float scale) {
-    return JBUIScale.setUserScaleFactor(scale);
   }
 
   /**
@@ -194,7 +177,7 @@ public class JBUI {
    * @deprecated Use {@link JBUIScale#scaleIcon(JBScalableIcon)}.
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @NotNull
   public static <T extends JBScalableIcon> T scale(@NotNull T icon) {
     return JBUIScale.scaleIcon(icon);
@@ -204,7 +187,7 @@ public class JBUI {
    * @deprecated Use {@link JBUIScale#scaleIcon(JBScalableIcon)}.
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @NotNull
   public static <T extends JBIcon> T scale(@NotNull T icon) {
     //noinspection unchecked
@@ -383,6 +366,10 @@ public class JBUI {
 
   @SuppressWarnings("UnregisteredNamedColor")
   public static final class CurrentTheme {
+    public interface Component {
+      Color FOCUSED_BORDER_COLOR = JBColor.namedColor("Component.focusedBorderColor", 0x87AFDA, 0x466D94);
+    }
+
     public static final class ActionButton {
       @NotNull
       public static Color pressedBackground() {
@@ -992,29 +979,65 @@ public class JBUI {
     }
 
     public static final class Link {
+      public static final Color FOCUSED_BORDER_COLOR = JBColor.namedColor("Link.focusedBorderColor", Component.FOCUSED_BORDER_COLOR);
+
+      public interface Foreground {
+        Color DISABLED = JBColor.namedColor("Link.disabledForeground", Label.disabledForeground());
+        Color ENABLED = JBColor.namedColor("Link.activeForeground", JBColor.namedColor("link.foreground", 0x589DF6));
+        Color HOVERED = JBColor.namedColor("Link.hoverForeground", JBColor.namedColor("link.hover.foreground", ENABLED));
+        Color PRESSED = JBColor.namedColor("Link.pressedForeground", JBColor.namedColor("link.pressed.foreground", 0xF00000, 0xBA6F25));
+        Color VISITED = JBColor.namedColor("Link.visitedForeground", JBColor.namedColor("link.visited.foreground", 0x800080, 0x9776A9));
+        Color SECONDARY = JBColor.namedColor("Link.secondaryForeground", 0x779DBD, 0x5676A0);
+      }
+
+      /**
+       * @deprecated use {@link Foreground#ENABLED} instead
+       */
+      @ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
+      @Deprecated
       @NotNull
       public static Color linkColor() {
-        return JBColor.namedColor("Link.activeForeground", JBColor.namedColor("link.foreground", 0x589df6));
+        return Foreground.ENABLED;
       }
 
+      /**
+       * @deprecated use {@link Foreground#HOVERED} instead
+       */
+      @ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
+      @Deprecated
       @NotNull
       public static Color linkHoverColor() {
-        return JBColor.namedColor("Link.hoverForeground", JBColor.namedColor("link.hover.foreground", linkColor()));
+        return Foreground.HOVERED;
       }
 
+      /**
+       * @deprecated use {@link Foreground#PRESSED} instead
+       */
+      @ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
+      @Deprecated
       @NotNull
       public static Color linkPressedColor() {
-        return JBColor.namedColor("Link.pressedForeground", JBColor.namedColor("link.pressed.foreground", new JBColor(0xf00000, 0xba6f25)));
+        return Foreground.PRESSED;
       }
 
+      /**
+       * @deprecated use {@link Foreground#VISITED} instead
+       */
+      @ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
+      @Deprecated
       @NotNull
       public static Color linkVisitedColor() {
-        return JBColor.namedColor("Link.visitedForeground", JBColor.namedColor("link.visited.foreground", new JBColor(0x800080, 0x9776a9)));
+        return Foreground.VISITED;
       }
 
+      /**
+       * @deprecated use {@link Foreground#SECONDARY} instead
+       */
+      @ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
+      @Deprecated
       @NotNull
       public static Color linkSecondaryColor() {
-        return JBColor.namedColor("Link.secondaryForeground", new JBColor(0x779dbd, 0x5676a0));
+        return Foreground.SECONDARY;
       }
     }
 
@@ -1028,6 +1051,11 @@ public class JBUI {
       public static Color borderColor() {
         return JBColor.namedColor("ToolTip.borderColor", new JBColor(0xadadad, 0x636569));
       }
+    }
+
+    public interface ContextHelp {
+      @NotNull
+      public static Color FOREGROUND = JBColor.namedColor("Label.infoForeground", new JBColor(Gray.x78, Gray.x8C));
     }
 
     public static final class Arrow {
@@ -1284,22 +1312,10 @@ public class JBUI {
    */
 
   /**
-   * @deprecated Use {@link com.intellij.ui.scale.ScaleType}.
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval
-  public enum ScaleType {
-    USR_SCALE,
-    SYS_SCALE,
-    OBJ_SCALE,
-    PIX_SCALE
-  }
-
-  /**
    * @deprecated Use {@link UserScaleContext}.
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   public static class BaseScaleContext extends UserScaleContext {
     @SuppressWarnings("MethodOverloadsMethodOfSuperclass")
     public boolean update(@Nullable BaseScaleContext ctx) {
@@ -1309,27 +1325,13 @@ public class JBUI {
     public boolean update(@NotNull Scale scale) {
       return setScale(scale);
     }
-
-    /**
-     * @deprecated Use {@link UserScaleContext#getScale(com.intellij.ui.scale.ScaleType)}.
-     */
-    @Deprecated
-    public double getScale(@NotNull ScaleType type) {
-      switch (type) {
-        case USR_SCALE: return usrScale.value();
-        case SYS_SCALE: return 1d;
-        case OBJ_SCALE: return objScale.value();
-        case PIX_SCALE: return pixScale;
-      }
-      return 1f; // unreachable
-    }
   }
 
   /**
    * @deprecated Use {@link com.intellij.ui.scale.ScaleContext}.
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @SuppressWarnings({"ClassNameSameAsAncestorName", "MethodOverridesStaticMethodOfSuperclass"})
   public static final class ScaleContext extends com.intellij.ui.scale.ScaleContext {
     private ScaleContext() {
@@ -1357,17 +1359,6 @@ public class JBUI {
     }
 
     @Override
-    public double getScale(@NotNull ScaleType type) {
-      switch (type) {
-        case USR_SCALE: return usrScale.value();
-        case SYS_SCALE: return sysScale.value();
-        case OBJ_SCALE: return objScale.value();
-        case PIX_SCALE: return pixScale;
-      }
-      return 1f; // unreachable
-    }
-
-    @Override
     public boolean update(@Nullable BaseScaleContext context) {
       return super.update(context);
     }
@@ -1377,7 +1368,7 @@ public class JBUI {
    * @deprecated Use {@link JBScalableIcon}.
    */
   @Deprecated
-  @ApiStatus.ScheduledForRemoval
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   @SuppressWarnings("DeprecatedIsStillUsed")
   public abstract static class JBIcon<T extends JBScalableIcon> extends JBScalableIcon {
     public JBIcon() {

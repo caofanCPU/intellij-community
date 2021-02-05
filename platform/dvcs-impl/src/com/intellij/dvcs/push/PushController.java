@@ -210,7 +210,7 @@ public final class PushController implements Disposable {
 
     //noinspection unchecked
     myView2Model.put(repoNode, (MyRepoModel<Repository, PushSource, PushTarget>)model);
-    repoPanel.addRepoNodeListener(new RepositoryNodeListener<T>() {
+    repoPanel.addRepoNodeListener(new RepositoryNodeListener<>() {
       @Override
       public void onTargetChanged(T newTarget) {
         repoNode.setChecked(true);
@@ -301,7 +301,7 @@ public final class PushController implements Disposable {
           if (!errors.isEmpty()) {
             shouldBeSelected = false;
             model.setLoadedCommits(ContainerUtil.emptyList());
-            myPushLog.setChildren(node, ContainerUtil.map(errors, (Function<VcsError, DefaultMutableTreeNode>)error -> {
+            myPushLog.setChildren(node, ContainerUtil.map(errors, error -> {
               VcsLinkedTextComponent errorLinkText = new VcsLinkedTextComponent(error.getText(), new VcsLinkListener() {
                 @Override
                 public void hyperlinkActivated(@NotNull DefaultMutableTreeNode sourceNode, @NotNull MouseEvent event) {

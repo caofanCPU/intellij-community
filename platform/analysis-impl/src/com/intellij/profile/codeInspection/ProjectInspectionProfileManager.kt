@@ -1,7 +1,6 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.profile.codeInspection
 
-import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInspection.ex.InspectionProfileImpl
 import com.intellij.codeInspection.ex.InspectionToolRegistrar
 import com.intellij.configurationStore.*
@@ -104,12 +103,6 @@ open class ProjectInspectionProfileManager(val project: Project) : BaseInspectio
 
       scopesManager.addScopeListener(projectScopeListener, project)
       NamedScopeManager.getInstance(project).addScopeListener(projectScopeListener, project)
-
-      val appScopeListener = NamedScopesHolder.ScopeListener {
-        InspectionProfileManager.getInstance().currentProfile.scopesChanged()
-      }
-
-      NamedScopeManager.getInstance(project).addScopeListener(appScopeListener, project)
     }
   }
 
@@ -202,13 +195,11 @@ open class ProjectInspectionProfileManager(val project: Project) : BaseInspectio
 
   @Synchronized
   override fun setRootProfile(name: String?) {
-    if (name != state.projectProfile) {
-      state.useProjectProfile = name != null
-      if (name != null) {
-        state.projectProfile = name
-      }
+    state.useProjectProfile = name != null
+    if (name != null) {
+      state.projectProfile = name
     }
-    DaemonCodeAnalyzer.getInstance(project).restart()
+    schemeManager.setCurrentSchemeName(name, true)
   }
 
   @Synchronized

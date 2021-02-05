@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl;
 
 import com.intellij.ide.DataManager;
@@ -12,6 +12,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
@@ -31,7 +32,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.ComponentWithMnemonics;
 import com.intellij.ui.InplaceButton;
-import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.docking.DockContainer;
 import com.intellij.ui.docking.DockManager;
 import com.intellij.ui.docking.DockableContent;
@@ -41,6 +41,7 @@ import com.intellij.ui.tabs.*;
 import com.intellij.ui.tabs.impl.*;
 import com.intellij.ui.tabs.impl.tabsLayout.TabsLayoutInfo;
 import com.intellij.ui.tabs.impl.tabsLayout.TabsLayoutSettingsManager;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.TimedDeadzone;
 import com.intellij.util.ui.UIUtil;
@@ -181,13 +182,9 @@ public final class EditorTabbedContainer implements CloseAction.CloseTarget {
     myTabs.getTabAt(index).setDefaultForeground(color);
   }
 
-  void setStyleAt(int index, @SimpleTextAttributes.StyleAttributeConstant int style) {
-    myTabs.getTabAt(index).setDefaultStyle(style);
-  }
-
-  void setWaveColor(int index, @Nullable Color color) {
+  void setTextAttributes(int index, @Nullable TextAttributes attributes) {
     TabInfo tab = myTabs.getTabAt(index);
-    tab.setDefaultWaveColor(color);
+    tab.setDefaultAttributes(attributes);
   }
 
   void setIconAt(int index, Icon icon) {
@@ -271,7 +268,7 @@ public final class EditorTabbedContainer implements CloseAction.CloseTarget {
     }
 
     tab = new TabInfo(component)
-      .setText(EditorTabPresentationUtil.getEditorTabTitle(myProject, file, myWindow))
+      .setText(SlowOperations.allowSlowOperations(() -> EditorTabPresentationUtil.getEditorTabTitle(myProject, file, myWindow)))
       .setTabColor(EditorTabPresentationUtil.getEditorTabBackgroundColor(myProject, file, myWindow))
       .setIcon(UISettings.getInstance().getShowFileIconInTabs() ? icon : null)
       .setTooltipText(tooltip)
@@ -324,7 +321,7 @@ public final class EditorTabbedContainer implements CloseAction.CloseTarget {
     }
 
     @Override
-    public void putInfo(@NotNull Map<String, String> info) {
+    public void putInfo(@NotNull Map<? super String, ? super String> info) {
       info.put("editorTab", myTab.getText());
     }
   }
@@ -334,20 +331,6 @@ public final class EditorTabbedContainer implements CloseAction.CloseTarget {
   @NotNull
   public static String calcTabTitle(@NotNull Project project, @NotNull VirtualFile file) {
     return EditorTabPresentationUtil.getEditorTabTitle(project, file, null);
-  }
-
-  /** @deprecated Use {@link EditorTabPresentationUtil#getUniqueEditorTabTitle(Project, VirtualFile, EditorWindow)} */
-  @Deprecated
-  @NotNull
-  public static String calcFileName(@NotNull Project project, @NotNull VirtualFile file) {
-    return EditorTabPresentationUtil.getUniqueEditorTabTitle(project, file, null);
-  }
-
-  /** @deprecated Use {@link EditorTabPresentationUtil#getEditorTabBackgroundColor(Project, VirtualFile, EditorWindow)} */
-  @Deprecated
-  @Nullable
-  public static Color calcTabColor(@NotNull Project project, @NotNull VirtualFile file) {
-    return EditorTabPresentationUtil.getEditorTabBackgroundColor(project, file, null);
   }
 
   public Component getComponentAt(int i) {
@@ -431,7 +414,7 @@ public final class EditorTabbedContainer implements CloseAction.CloseTarget {
         if (!(deepestComponent instanceof InplaceButton)) {
           myActionClickCount++;
         }
-        if (myActionClickCount > 1 && !isFloating()) {
+        if (myActionClickCount > 1) {
           doHideAll(e);
         }
       }

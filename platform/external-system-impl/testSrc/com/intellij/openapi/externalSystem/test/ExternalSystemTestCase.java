@@ -174,14 +174,8 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     ).run();
   }
 
-  protected void tearDownFixtures() {
-    if (myTestFixture != null) {
-      try {
-        myTestFixture.tearDown();
-      }
-      catch (Exception ignored) {
-      }
-    }
+  protected void tearDownFixtures() throws Exception {
+    myTestFixture.tearDown();
     myTestFixture = null;
   }
 
@@ -354,7 +348,7 @@ public abstract class ExternalSystemTestCase extends UsefulTestCase {
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     JarOutputStream target = new JarOutputStream(new FileOutputStream(f), manifest);
     for (Pair<ByteArraySequence, String> contentEntry : contentEntries) {
-      addJarEntry(contentEntry.first.getBytes(), contentEntry.second, target);
+      addJarEntry(contentEntry.first.toBytes(), contentEntry.second, target);
     }
     target.close();
 

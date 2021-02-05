@@ -10,11 +10,7 @@ import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 import org.apache.tools.ant.AntClassLoader
 import org.apache.tools.ant.types.Path
-import org.jetbrains.intellij.build.BuildOptions
-import org.jetbrains.intellij.build.CompilationContext
-import org.jetbrains.intellij.build.CompilationTasks
-import org.jetbrains.intellij.build.TestingOptions
-import org.jetbrains.intellij.build.TestingTasks
+import org.jetbrains.intellij.build.*
 import org.jetbrains.intellij.build.causal.CausalProfilingOptions
 import org.jetbrains.intellij.build.impl.compilation.PortableCompilationCache
 import org.jetbrains.jps.model.java.JpsJavaClasspathKind
@@ -53,7 +49,10 @@ class TestingTasksImpl extends TestingTasks {
     if (projectArtifacts) {
       compilationTasks.buildProjectArtifacts(projectArtifacts)
     }
-    def runConfigurations = options.testConfigurations?.split(";")?.collect { loadRunConfiguration(it) }
+    def runConfigurations = options.testConfigurations?.split(";")?.collect { String name ->
+      def file = JUnitRunConfigurationProperties.findRunConfiguration(context.paths.projectHome, name, context.messages)
+      JUnitRunConfigurationProperties.loadRunConfiguration(file, context.messages)
+    }
     if (runConfigurations != null) {
       compilationTasks.compileModules(["intellij.tools.testsBootstrap"], ["intellij.platform.buildScripts"] + runConfigurations.collect { it.moduleName })
       compilationTasks.buildProjectArtifacts(runConfigurations.collectMany {it.requiredArtifacts})
@@ -126,11 +125,8 @@ class TestingTasksImpl extends TestingTasks {
                                             Map<String, String> additionalSystemProperties) {
     context.messages.progress("Running '${runConfigurationProperties.name}' run configuration")
     List<String> filteredVmOptions = removeStandardJvmOptions(runConfigurationProperties.vmParameters)
-    runTestsProcess(runConfigurationProperties.moduleName,
-                    runConfigurationProperties.testBootstrapSuite, null,
-                    runConfigurationProperties.testClassPatterns.join(";"),
-                    filteredVmOptions + additionalJvmOptions, additionalSystemProperties,
-                    runConfigurationProperties.envVariables, false)
+    runTestsProcess(runConfigurationProperties.moduleName, null, runConfigurationProperties.testClassPatterns.join(";"),
+                    filteredVmOptions + additionalJvmOptions, additionalSystemProperties, runConfigurationProperties.envVariables, false)
   }
 
   private static List<String> removeStandardJvmOptions(List<String> vmOptions) {
@@ -162,9 +158,7 @@ class TestingTasksImpl extends TestingTasks {
       additionalSystemProperties["exclude.tests.roots.file"] = excludedRootsFile.absolutePath
     }
 
-    runTestsProcess(mainModule, options.bootstrapSuite,
-                    options.testGroups, options.testPatterns,
-                    additionalJvmOptions, additionalSystemProperties, [:], false)
+    runTestsProcess(mainModule, options.testGroups, options.testPatterns, additionalJvmOptions, additionalSystemProperties, [:], false)
   }
 
   private loadTestDiscovery(List<String> additionalJvmOptions, LinkedHashMap<String, String> additionalSystemProperties) {
@@ -266,12 +260,10 @@ class TestingTasksImpl extends TestingTasks {
     }
     def mainModule = options.mainModule ?: defaultMainModule
     def filteredOptions = removeStandardJvmOptions(StringUtil.splitHonorQuotes(remoteDebugJvmOptions, ' ' as char))
-    runTestsProcess(mainModule, options.bootstrapSuite, null,
-                    junitClass, filteredOptions + additionalJvmOptions,
-                    [:], [:], true)
+    runTestsProcess(mainModule, null, junitClass, filteredOptions + additionalJvmOptions, [:], [:], true)
   }
 
-  private void runTestsProcess(String mainModule, String testBootstrapSuite, String testGroups, String testPatterns,
+  private void runTestsProcess(String mainModule, String testGroups, String testPatterns,
                                List<String> jvmArgs, Map<String, String> systemProperties, Map<String, String> envVariables, boolean remoteDebugging) {
     List<String> testsClasspath = context.getModuleRuntimeClasspath(context.findRequiredModule(mainModule), true)
     List<String> bootstrapClasspath = context.getModuleRuntimeClasspath(context.findRequiredModule("intellij.tools.testsBootstrap"), false)
@@ -310,8 +302,7 @@ class TestingTasksImpl extends TestingTasks {
       context.messages.info("Environment variables: $envVariables")
     }
 
-    runJUnitTask(mainModule, testBootstrapSuite, allJvmArgs, allSystemProperties, envVariables,
-                 isBootstrapSuiteDefault(testBootstrapSuite) && !isRunningInBatchMode() ? bootstrapClasspath : testsClasspath)
+    runJUnitTask(mainModule, allJvmArgs, allSystemProperties, envVariables, isBootstrapSuiteDefault() && !isRunningInBatchMode() ? bootstrapClasspath : testsClasspath)
 
     notifySnapshotBuilt(allJvmArgs)
   }
@@ -426,8 +417,7 @@ class TestingTasksImpl extends TestingTasks {
 
   @SuppressWarnings("GrUnresolvedAccess")
   @CompileDynamic
-  private void runJUnitTask(String mainModule, String testBootstrapSuite,
-                            List<String> jvmArgs, Map<String, String> systemProperties,
+  private void runJUnitTask(String mainModule, List<String> jvmArgs, Map<String, String> systemProperties,
                             Map<String, String> envVariables, List<String> bootstrapClasspath) {
     defineJunitTask(context.ant, "$context.paths.communityHome/lib")
 
@@ -468,7 +458,7 @@ class TestingTasksImpl extends TestingTasks {
       }
 
       //test classpath may exceed the maximum command line, so we need to wrap a classpath in a jar
-      if (!isBootstrapSuiteDefault(testBootstrapSuite)) {
+      if (!isBootstrapSuiteDefault()) {
         def classpathJarFile = CommandLineWrapperUtil.createClasspathJarFile(new Manifest(), bootstrapClasspath)
         classpath {
           pathelement(location: classpathJarFile.path)
@@ -487,7 +477,7 @@ class TestingTasksImpl extends TestingTasks {
           fileset dir: mainModuleTestsOutput, includes: options.batchTestIncludes
         }
       } else {
-        test(name: testBootstrapSuite)
+        test(name: options.bootstrapSuite)
       }
     }
   }
@@ -564,8 +554,8 @@ class TestingTasksImpl extends TestingTasks {
     ant.taskdef(name: "junit", classname: "org.apache.tools.ant.taskdefs.optional.junit.JUnitTask", loaderRef: junitTaskLoaderRef)
   }
 
-  protected static boolean isBootstrapSuiteDefault(String testBootstrapSuite) {
-    return testBootstrapSuite == TestingOptions.BOOTSTRAP_SUITE_DEFAULT
+  protected boolean isBootstrapSuiteDefault() {
+    return options.bootstrapSuite == TestingOptions.BOOTSTRAP_SUITE_DEFAULT
   }
 
   protected boolean isRunningInBatchMode() {
@@ -593,22 +583,5 @@ class TestingTasksImpl extends TestingTasks {
     }
 
     return causalProfilingJvmArgs
-  }
-
-  private JUnitRunConfigurationProperties loadRunConfiguration(String descriptor) {
-    String name
-    String testBootstrapSuite
-    def openingIndex = descriptor.indexOf('(')
-    def closingIndex = descriptor.indexOf(')')
-    if (openingIndex > -1 && closingIndex > -1 && closingIndex > openingIndex) {
-      name = descriptor.substring(0, openingIndex).trim()
-      testBootstrapSuite = descriptor.substring(openingIndex + 1, closingIndex).trim()
-    }
-    else {
-      name = descriptor.trim()
-      testBootstrapSuite = options.bootstrapSuite
-    }
-    def file = JUnitRunConfigurationProperties.findRunConfiguration(context.paths.projectHome, name, context.messages)
-    return JUnitRunConfigurationProperties.loadRunConfiguration(file, testBootstrapSuite, context.messages)
   }
 }

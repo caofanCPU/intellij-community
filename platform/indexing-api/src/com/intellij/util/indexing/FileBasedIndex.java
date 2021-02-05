@@ -60,22 +60,6 @@ public abstract class FileBasedIndex {
     return processor;
   }
 
-  /**
-   * @deprecated please use {@link IndexableSetContributor} or
-   * {@link com.intellij.util.indexing.roots.IndexableFilesContributor}
-   * which will be managed registered/unregistered automatically.
-   */
-  @Deprecated
-  public abstract void registerIndexableSet(@NotNull IndexableFileSet set, @NotNull Project project);
-
-  /**
-   * @deprecated please use {@link IndexableSetContributor} or
-   * {@link com.intellij.util.indexing.roots.IndexableFilesContributor}
-   * which will be managed registered/unregistered automatically.
-   */
-  @Deprecated
-  public abstract void removeIndexableSet(@NotNull IndexableFileSet set);
-
   public static FileBasedIndex getInstance() {
     return ApplicationManager.getApplication().getService(FileBasedIndex.class);
   }
@@ -197,6 +181,10 @@ public abstract class FileBasedIndex {
 
   @NotNull
   public abstract <K, V> Map<K, V> getFileData(@NotNull ID<K, V> id, @NotNull VirtualFile virtualFile, @NotNull Project project);
+
+  public abstract <V> @Nullable V getSingleEntryIndexData(@NotNull ID<Integer, V> id,
+                                                          @NotNull VirtualFile virtualFile,
+                                                          @NotNull Project project);
 
   public static void iterateRecursively(@NotNull final VirtualFile root,
                                         @NotNull final ContentIterator processor,

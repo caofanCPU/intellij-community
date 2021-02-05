@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.inspection;
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
@@ -6,6 +6,7 @@ import com.intellij.codeInsight.daemon.impl.ProblemDescriptorWithReporterName;
 import com.intellij.codeInspection.*;
 import com.intellij.codeInspection.ex.*;
 import com.intellij.dupLocator.iterators.CountingNodeIterator;
+import com.intellij.dupLocator.iterators.NodeIterator;
 import com.intellij.notification.NotificationGroup;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
@@ -95,18 +96,20 @@ public class SSBasedInspection extends LocalInspectionTool implements DynamicGro
     Configuration previous = null;
     boolean sorted = true;
     for (Configuration configuration : myConfigurations) {
-      if (previous != null) {
-        if (CONFIGURATION_COMPARATOR.compare(previous, configuration) >= 0 || configuration.getOrder() != 0) {
-          sorted = false;
-          break;
-        }
-        if (previous.getUuid().equals(configuration.getUuid())) {
-          configuration.setOrder(previous.getOrder() + 1);
-        }
+      if (configuration.getOrder() != 0 || previous != null && CONFIGURATION_COMPARATOR.compare(previous, configuration) > 0) {
+        sorted = false;
+        break;
       }
       previous = configuration;
     }
     if (sorted) {
+      previous = null;
+      for (Configuration configuration : myConfigurations) {
+        if (previous != null && previous.getUuid().equals(configuration.getUuid())) {
+          configuration.setOrder(previous.getOrder() + 1); // restore order
+        }
+        previous = configuration;
+      }
       myWriteSorted = true; // write sorted if already sorted
     }
   }
@@ -439,7 +442,7 @@ public class SSBasedInspection extends LocalInspectionTool implements DynamicGro
       if (!myProfile.isToolEnabled(HighlightDisplayKey.find(configuration.getUuid().toString()), element)) {
         return;
       }
-      final SsrFilteringNodeIterator matchedNodes = new SsrFilteringNodeIterator(element);
+      final NodeIterator matchedNodes = SsrFilteringNodeIterator.create(element);
       if (!matcher.checkIfShouldAttemptToMatch(matchedNodes)) {
         return;
       }

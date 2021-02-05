@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.stubs;
 
 import com.intellij.lang.ASTNode;
@@ -27,7 +27,7 @@ public abstract class IStubElementType<StubT extends StubElement<?>, PsiT extend
   public static void checkNotInstantiatedTooLate(@NotNull Class<?> aClass) {
     if (ourInitializedStubs) {
       LOG.error("All stub element types should be created before index initialization is complete.\n" +
-                "Please add the " + aClass.getName() + " containing stub element type constants to \"stubElementTypeHolder\" extension.\n" +
+                "Please add the " + aClass + " containing stub element type constants to \"stubElementTypeHolder\" extension.\n" +
                 "Registered extensions: " + StubElementTypeHolderEP.EP_NAME.getExtensionList());
     }
   }
@@ -65,7 +65,7 @@ public abstract class IStubElementType<StubT extends StubElement<?>, PsiT extend
 
   public abstract PsiT createPsi(@NotNull StubT stub);
 
-  public abstract @NotNull StubT createStub(@NotNull PsiT psi, StubElement<?> parentStub);
+  public abstract @NotNull StubT createStub(@NotNull PsiT psi, StubElement<? extends PsiElement> parentStub);
 
   public boolean shouldCreateStub(ASTNode node) {
     return true;

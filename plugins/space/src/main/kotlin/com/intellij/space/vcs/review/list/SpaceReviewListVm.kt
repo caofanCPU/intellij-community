@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.review.list
 
 import circlet.client.api.ProjectKey
@@ -15,24 +15,25 @@ import org.jetbrains.annotations.PropertyKey
 import runtime.reactive.MutableProperty
 import runtime.reactive.Property
 
-interface SpaceReviewsListVm : Lifetimed {
+internal interface SpaceReviewsListVm : Lifetimed {
   val spaceProjectInfo: SpaceProjectInfo
 
   val sorting: MutableProperty<ReviewSorting>
 
   val quickFiltersMap: Property<Map<ReviewListQuickFilter, ReviewListFilters>>
 
-  val spaceReviewsFilterSettings: MutableProperty<ReviewListFilters>
+  val spaceReviewsQuickFilter: MutableProperty<ReviewListFilters>
 
+  val textToSearch: MutableProperty<String>
 
-  val isLoading: MutableProperty<Boolean>
+  val isLoading: Property<Boolean>
 
   val reviews: Property<XPagedListOnFlux<CodeReviewListItem>>
 
   fun refresh()
 }
 
-data class ReviewListFilters(
+internal data class ReviewListFilters(
   val projectKey: ProjectKey,
   val state: CodeReviewStateFilter? = null,
   val text: String = "",
@@ -42,7 +43,7 @@ data class ReviewListFilters(
   val createdTo: ADate? = null
 )
 
-enum class ReviewListQuickFilter(@PropertyKey(resourceBundle = SpaceBundle.BUNDLE) private val key: String) {
+internal enum class ReviewListQuickFilter(@PropertyKey(resourceBundle = SpaceBundle.BUNDLE) private val key: String) {
   OPEN("review.quick.filters.open"),
   AUTHORED_BY_ME("review.quick.filters.includes.my.changes"),
   NEEDS_MY_ATTENTION("review.quick.filters.needs.me.attention"),

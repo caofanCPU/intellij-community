@@ -16,28 +16,32 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.EnvironmentUtil;
-import com.intellij.util.PathUtil;
-import com.intellij.util.TimeoutUtil;
+import com.intellij.terminal.JBTerminalWidget;
+import com.intellij.util.*;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.CollectionFactory;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.execution.ParametersListUtil;
 import com.jediterm.pty.PtyProcessTtyConnector;
 import com.jediterm.terminal.TtyConnector;
 import com.pty4j.PtyProcess;
+import com.pty4j.PtyProcessBuilder;
+import com.pty4j.unix.UnixPtyProcess;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess> {
   private static final Logger LOG = Logger.getInstance(LocalTerminalDirectRunner.class);
@@ -59,15 +63,6 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   public LocalTerminalDirectRunner(Project project) {
     super(project);
     myDefaultCharset = StandardCharsets.UTF_8;
-  }
-
-  private static String getShellName(@Nullable String path) {
-    if (path == null) {
-      return null;
-    }
-    else {
-      return new File(path).getName();
-    }
   }
 
   @Nullable
@@ -154,12 +149,8 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   }
 
   @Override
-  public PtyProcess createProcess(@Nullable String directory) throws ExecutionException {
-    return createProcess(directory, null);
-  }
-
-  @Override
-  protected PtyProcess createProcess(@Nullable String directory, @Nullable String commandHistoryFilePath) throws ExecutionException {
+  public @NotNull PtyProcess createProcess(@NotNull TerminalProcessOptions options,
+                                           @Nullable JBTerminalWidget widget) throws ExecutionException {
     Map<String, String> envs = getTerminalEnvironment();
 
     String[] command = ArrayUtil.toStringArray(getInitialCommand(envs));
@@ -172,17 +163,24 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
         LOG.error("Exception during customization of the terminal session", e);
       }
     }
+    String commandHistoryFilePath = ShellTerminalWidget.getCommandHistoryFilePath(widget);
     if (commandHistoryFilePath != null) {
       envs.put(IJ_COMMAND_HISTORY_FILE_ENV, commandHistoryFilePath);
     }
 
-    String workingDir = getWorkingDirectory(directory);
+    String workingDir = getWorkingDirectory(options.getWorkingDirectory());
     TerminalUsageTriggerCollector.triggerLocalShellStarted(myProject, command);
     try {
       long startNano = System.nanoTime();
-      PtyProcess process = PtyProcess.exec(command, envs, workingDir);
+      PtyProcessBuilder builder = new PtyProcessBuilder(command)
+        .setEnvironment(envs)
+        .setDirectory(workingDir)
+        .setInitialColumns(options.getInitialColumns())
+        .setInitialRows(options.getInitialRows());
+      PtyProcess process = builder.start();
       if (LOG.isDebugEnabled()) {
         LOG.debug("Started " + process.getClass().getName() + " from " + Arrays.toString(command) + " in " + workingDir +
+                  " [" + options.getInitialColumns() + "," + options.getInitialRows() + "]" +
                   " (" + TimeoutUtil.getDurationMillis(startNano) + " ms)");
       }
       return process;
@@ -208,14 +206,31 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   }
 
   @Override
-  protected TtyConnector createTtyConnector(PtyProcess process) {
+  protected @NotNull TtyConnector createTtyConnector(@NotNull PtyProcess process) {
     return new PtyProcessTtyConnector(process, myDefaultCharset) {
+
       @Override
-      protected void resizeImmediately() {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("resizeImmediately to " + getPendingTermSize());
+      public void close() {
+        if (process instanceof UnixPtyProcess) {
+          ((UnixPtyProcess)process).hangup();
+          AppExecutorUtil.getAppScheduledExecutorService().schedule(() -> {
+            if (process.isAlive()) {
+              LOG.info("Terminal hasn't been terminated by SIGHUP, performing default termination");
+              process.destroy();
+            }
+          }, 1000, TimeUnit.MILLISECONDS);
         }
-        super.resizeImmediately();
+        else {
+          process.destroy();
+        }
+      }
+
+      @Override
+      public void resize(@NotNull Dimension termWinSize) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("resize to " + termWinSize);
+        }
+        super.resize(termWinSize);
       }
     };
   }
@@ -269,13 +284,12 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
       return ParametersListUtil.parse(shellPath, false, false);
     }
     List<String> command = ParametersListUtil.parse(shellPath, false, true);
-    String shellCommand = command.size() > 0 ? command.get(0) : null;
-    String shellName = getShellName(shellCommand);
-
-    if (shellName == null) {
+    String shellCommand = ContainerUtil.getFirstItem(command);
+    if (shellCommand == null) {
       return command;
     }
     command.remove(0);
+    String shellName = PathUtil.getFileName(shellCommand);
 
     if (!containsLoginOrInteractiveOption(command)) {
       if (isLoginOptionAvailable(shellName) && SystemInfo.isMac) {

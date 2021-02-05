@@ -8,17 +8,14 @@ import com.intellij.ide.startup.StartupActionScriptManager;
 import com.intellij.openapi.application.JetBrainsProtocolHandler;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.util.NlsSafe;
-import com.intellij.util.lang.UrlClassLoader;
+import com.intellij.util.lang.PathClassLoader;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.io.*;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.file.Files;
@@ -95,18 +92,22 @@ public final class Main {
         @Nls StringBuilder message = new StringBuilder(BootstrapBundle.message("bootstrap.error.message.unsupported.jre", 11)).append('\n');
         int min = message.length();
 
-        String envVar = baseName.toUpperCase(Locale.ENGLISH) + "_JDK";
+        String javaHome = System.getProperty("java.home");
+        if (javaHome.endsWith(File.separatorChar + "jre")) javaHome = javaHome.substring(0, javaHome.length() - 4);
+
+        boolean win = System.getProperty("os.name", "").startsWith("Windows"), x64 = "amd64".equals(System.getProperty("os.arch"));
+        String envVar = baseName.toUpperCase(Locale.ENGLISH) + "_JDK" + (win && x64 ? "_64" : "");
         String envValue = System.getenv(envVar);
-        if (envValue != null && Files.isSameFile(Paths.get(envValue), Paths.get(System.getProperty("java.home")))) {
+        if (envValue != null && Files.isSameFile(Paths.get(envValue), Paths.get(javaHome))) {
           message.append(BootstrapBundle.message("bootstrap.error.message.unsupported.jre.env", envVar));
         }
         else {
           String configPath = PathManager.getDefaultConfigPathFor(System.getProperty("idea.paths.selector", ""));
-          String suffix = System.getProperty("os.name", "").startsWith("Windows") ? "amd64".equals(System.getProperty("os.arch")) ? "64.exe" : ".exe" : "";
+          String suffix = win ? x64 ? "64.exe" : ".exe" : "";
           Path file = Paths.get(configPath, baseName.toLowerCase(Locale.ENGLISH) + suffix + ".jdk");
           try {
             Path jdkPath = Paths.get(Files.readString(file));
-            if (Files.isSameFile(jdkPath, Paths.get(System.getProperty("java.home")))) {
+            if (Files.isSameFile(jdkPath, Paths.get(javaHome))) {
               message.append(BootstrapBundle.message("bootstrap.error.message.unsupported.jre.file", file));
             }
           }
@@ -135,15 +136,17 @@ public final class Main {
     startupTimings.put("properties loading", System.nanoTime());
     PathManager.loadProperties();
 
+    startupTimings.put("plugin updates install", System.nanoTime());
     // this check must be performed before system directories are locked
-    String configPath = PathManager.getConfigPath();
-    boolean configImportNeeded = !isHeadless() && !Files.exists(Paths.get(configPath));
-    if (!configImportNeeded) {
-      installPluginUpdates();
+    if (!isCommandLine || Boolean.getBoolean(FORCE_PLUGIN_UPDATES)) {
+      boolean configImportNeeded = !isHeadless() && !Files.exists(Path.of(PathManager.getConfigPath()));
+      if (!configImportNeeded) {
+        installPluginUpdates();
+      }
     }
 
     startupTimings.put("classloader init", System.nanoTime());
-    UrlClassLoader newClassLoader = BootstrapClassLoaderUtil.initClassLoader();
+    PathClassLoader newClassLoader = BootstrapClassLoaderUtil.initClassLoader();
     Thread.currentThread().setContextClassLoader(newClassLoader);
 
     startupTimings.put("MainRunner search", System.nanoTime());
@@ -160,10 +163,6 @@ public final class Main {
 
   @SuppressWarnings("HardCodedStringLiteral")
   private static void installPluginUpdates() {
-    if (isCommandLine() && !Boolean.getBoolean(FORCE_PLUGIN_UPDATES)) {
-      return;
-    }
-
     try {
       StartupActionScriptManager.executeActionScript();
     }
@@ -195,7 +194,6 @@ public final class Main {
     if (isHeadless) {
       System.setProperty(AWT_HEADLESS, Boolean.TRUE.toString());
     }
-
     isLightEdit = "LightEdit".equals(System.getProperty(PLATFORM_PREFIX_PROPERTY)) || !isCommandLine && isFileAfterOptions(args);
   }
 
@@ -218,8 +216,8 @@ public final class Main {
   }
 
   @TestOnly
-  public static void setHeadlessInTestMode(boolean isHeadless) {
-    Main.isHeadless = isHeadless;
+  public static void setHeadlessInTestMode(boolean headless) {
+    isHeadless = headless;
     isCommandLine = true;
     isLightEdit = false;
   }

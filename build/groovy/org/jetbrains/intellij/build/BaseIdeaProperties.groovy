@@ -48,8 +48,7 @@ abstract class BaseIdeaProperties extends JetBrainsProductProperties {
     "intellij.externalSystem.dependencyUpdater",
     "intellij.gradle",
     "intellij.gradle.dependencyUpdater",
-    "intellij.gradle.dsl.impl",
-    "intellij.gradle.dsl.kotlin.impl",
+    "intellij.android.gradle.dsl",
     "intellij.gradle.java",
     "intellij.gradle.java.maven",
     "intellij.vcs.git",
@@ -125,12 +124,6 @@ abstract class BaseIdeaProperties extends JetBrainsProductProperties {
 
   BaseIdeaProperties() {
     productLayout.mainJarName = "idea.jar"
-
-    //for compatibility with generated Ant build.xml files which refer to this file
-    productLayout.additionalPlatformJars.
-      putAll("javac2.jar",
-             ["intellij.java.compiler.antTasks", "intellij.java.guiForms.compiler", "intellij.java.guiForms.rt",
-              "intellij.java.compiler.instrumentationUtil", "intellij.java.compiler.instrumentationUtil.java8"])
 
     productLayout.additionalPlatformJars.put("resources.jar", "intellij.java.ide.resources")
 

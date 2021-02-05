@@ -23,24 +23,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Please do not implement any new collectors using this API directly. Please refer to {@link EventLogGroup#registerEvent} for the new
- * collector API.
- * <p>
- * To test collector:
- * <ol>
- *  <li>
- *    If group is not registered on the server, add it to events test scheme with "Add Group to Events Test Scheme" action.<br/>
- *    {@link com.intellij.internal.statistic.actions.scheme.AddGroupToTestSchemeAction}
- *  </li>
- *  <li>
- *    Open toolwindow with event logs with "Show Statistics Event Log" action.<br/>
- *    {@link com.intellij.internal.statistic.actions.OpenEventLogFileAction}
- *  </li>
- * </ol>
+ * Please do not implement any new collectors using this API directly.
+ * Please refer to "fus-collectors.md" dev-guide and {@link EventLogGroup#registerEvent} doc comments for the new collector API.
  *
+ * @see CounterUsagesCollector
  * @see ApplicationUsagesCollector
  * @see ProjectUsagesCollector
  */
@@ -105,14 +95,15 @@ public final class FUCounterUsageLogger {
     myGroups.put(group.getId(), group);
   }
 
-  public void logRegisteredGroups() {
+  public CompletableFuture<Void> logRegisteredGroups() {
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
     for (EventLogGroup group : myGroups.values()) {
-      FeatureUsageLogger.INSTANCE.log(group, EventLogSystemEvents.COLLECTOR_REGISTERED);
+      futures.add(FeatureUsageLogger.INSTANCE.log(group, EventLogSystemEvents.COLLECTOR_REGISTERED));
     }
     for (FeatureUsagesCollector collector : instantiateCounterCollectors()) {
       EventLogGroup group = collector.getGroup();
       if (group != null) {
-        FeatureUsageLogger.INSTANCE.log(group, EventLogSystemEvents.COLLECTOR_REGISTERED);
+        futures.add(FeatureUsageLogger.INSTANCE.log(group, EventLogSystemEvents.COLLECTOR_REGISTERED));
       }
       else {
         try {
@@ -126,6 +117,7 @@ public final class FUCounterUsageLogger {
         }
       }
     }
+    return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
   }
 
   /**

@@ -13,6 +13,7 @@ import com.intellij.codeInsight.daemon.QuickFixBundle;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.daemon.impl.quickfix.QuickFixAction;
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.QuickFixFactory;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.java.analysis.JavaAnalysisBundle;
@@ -26,6 +27,7 @@ import com.intellij.openapi.roots.ModuleFileIndex;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
@@ -39,6 +41,7 @@ import com.intellij.psi.search.searches.DirectClassInheritorsSearch;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.*;
 import com.intellij.util.JavaPsiConstructorUtil;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
@@ -367,8 +370,8 @@ public final class HighlightClassUtil {
       return null;
     }
 
-    String message = JavaErrorBundle.message("static.declaration.in.inner.class");
-    HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
+    HighlightInfo result = HighlightUtil.checkFeature(keyword, HighlightingFeature.INNER_STATICS,
+                                                      PsiUtil.getLanguageLevel(field), field.getContainingFile());
 
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(field, PsiModifier.STATIC, false, false));
     registerMakeInnerClassStatic(field.getContainingClass(), result);
@@ -388,8 +391,8 @@ public final class HighlightClassUtil {
     }
     PsiMethod method = (PsiMethod)keyword.getParent().getParent();
     if (PsiUtilCore.hasErrorElementChild(method)) return null;
-    String message = JavaErrorBundle.message("static.declaration.in.inner.class");
-    HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
+    HighlightInfo result = HighlightUtil.checkFeature(keyword, HighlightingFeature.INNER_STATICS,
+                                                      PsiUtil.getLanguageLevel(method), method.getContainingFile());
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(method, PsiModifier.STATIC, false, false));
     registerMakeInnerClassStatic((PsiClass)keyword.getParent().getParent().getParent(), result);
     return result;
@@ -401,8 +404,8 @@ public final class HighlightClassUtil {
     }
     PsiClassInitializer initializer = (PsiClassInitializer)keyword.getParent().getParent();
     if (PsiUtilCore.hasErrorElementChild(initializer)) return null;
-    String message = JavaErrorBundle.message("static.declaration.in.inner.class");
-    HighlightInfo result = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(keyword).descriptionAndTooltip(message).create();
+    HighlightInfo result = HighlightUtil.checkFeature(keyword, HighlightingFeature.INNER_STATICS,
+                                                      PsiUtil.getLanguageLevel(initializer), initializer.getContainingFile());
     QuickFixAction.registerQuickFixAction(result, QUICK_FIX_FACTORY.createModifierListFix(initializer, PsiModifier.STATIC, false, false));
     registerMakeInnerClassStatic((PsiClass)keyword.getParent().getParent().getParent(), result);
     return result;
@@ -447,11 +450,13 @@ public final class HighlightClassUtil {
         }
       }
     }
+
     TextRange range = context != null ? context.getTextRange() : HighlightNamesUtil.getClassDeclarationTextRange(aClass);
-    String message = JavaErrorBundle.message("static.declaration.in.inner.class");
-    HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(range).descriptionAndTooltip(message).create();
+    HighlightInfo info = HighlightUtil.checkFeature(range, HighlightingFeature.INNER_STATICS,
+                                                    PsiUtil.getLanguageLevel(aClass), aClass.getContainingFile());
     if (context != keyword) {
-      QuickFixAction.registerQuickFixActions(info, null, JvmElementActionFactories.createModifierActions(aClass, MemberRequestsKt.modifierRequest(JvmModifier.STATIC, false)));
+      QuickFixAction.registerQuickFixActions(info, null, JvmElementActionFactories
+        .createModifierActions(aClass, MemberRequestsKt.modifierRequest(JvmModifier.STATIC, false)));
     }
     PsiClass containingClass = aClass.getContainingClass();
     registerMakeInnerClassStatic(containingClass, info);
@@ -1158,13 +1163,27 @@ public final class HighlightClassUtil {
                            .descriptionAndTooltip(JavaErrorBundle.message("class.not.allowed.to.extend.sealed.class.from.another.module"))
                            .create());
             }
+            else if (!hasPermittedSubclassModifier(inheritorClass)) {
+              HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                .range(permitted)
+                .descriptionAndTooltip(JavaErrorBundle.message("permitted.subclass.must.have.modifier"))
+                .create();
+              IntentionAction markNonSealed = QUICK_FIX_FACTORY.createModifierListFix(inheritorClass, PsiModifier.NON_SEALED, true, false);
+              QuickFixAction.registerQuickFixAction(info, markNonSealed);
+              boolean hasInheritors = DirectClassInheritorsSearch.search(inheritorClass).findFirst() != null;
+              IntentionAction action = hasInheritors ?
+                                       QUICK_FIX_FACTORY.createSealClassFromPermitsListFix(inheritorClass) :
+                                       QUICK_FIX_FACTORY.createModifierListFix(inheritorClass, PsiModifier.FINAL, true, false);
+              QuickFixAction.registerQuickFixAction(info, action);
+              holder.add(info);
+            }
           }
         }
       }
     }
   }
 
-  public static HighlightInfo checkSealedNonEnumeratedInheritors(PsiClass psiClass) {
+  public static @Nullable HighlightInfo checkSealedClassInheritors(PsiClass psiClass) {
     if (psiClass.hasModifierProperty(PsiModifier.SEALED)) {
       PsiIdentifier nameIdentifier = psiClass.getNameIdentifier();
       if (nameIdentifier == null) return null;
@@ -1180,7 +1199,8 @@ public final class HighlightClassUtil {
       PsiFile parentFile = psiClass.getContainingFile();
       boolean hasOutsideClasses = inheritors.stream().anyMatch(inheritor -> inheritor.getContainingFile() != parentFile);
       if (hasOutsideClasses) {
-        Set<PsiElement> permittedClasses = ContainerUtil.map2Set(psiClass.getPermitsListTypes(), PsiClassType::resolve);
+        Map<PsiJavaCodeReferenceElement, PsiClass> permittedClassesRefs = getPermittedClassesRefs(psiClass);
+        Collection<PsiClass> permittedClasses = permittedClassesRefs.values();
         boolean hasMissingInheritors = inheritors.stream().anyMatch(inheritor -> !permittedClasses.contains(inheritor));
         if (hasMissingInheritors) {
           HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
@@ -1194,6 +1214,21 @@ public final class HighlightClassUtil {
     }
     return null;
   }
+  
+  private static @NotNull Map<PsiJavaCodeReferenceElement, PsiClass> getPermittedClassesRefs(@NotNull PsiClass psiClass) {
+    PsiReferenceList permitsList = psiClass.getPermitsList();
+    if (permitsList == null) return Collections.emptyMap();
+    PsiJavaCodeReferenceElement[] classRefs = permitsList.getReferenceElements();
+    return ContainerUtil.map2Map(classRefs, r -> Pair.create(r, ObjectUtils.tryCast(r.resolve(), PsiClass.class)));
+  }
+  
+  private static boolean hasPermittedSubclassModifier(@NotNull PsiClass psiClass) {
+    PsiModifierList modifiers = psiClass.getModifierList();
+    if (modifiers == null) return false;
+    return modifiers.hasExplicitModifier(PsiModifier.SEALED) ||
+           modifiers.hasExplicitModifier(PsiModifier.NON_SEALED) ||
+           modifiers.hasExplicitModifier(PsiModifier.FINAL);
+  }
 
   public static HighlightInfo checkSealedSuper(PsiClass aClass) {
     PsiIdentifier nameIdentifier = aClass.getNameIdentifier();
@@ -1205,9 +1240,10 @@ public final class HighlightClassUtil {
         Arrays.stream(aClass.getSuperTypes())
           .map(type -> type.resolve())
           .anyMatch(superClass -> superClass != null && superClass.hasModifierProperty(PsiModifier.SEALED))) {
+      boolean canBeFinal = !aClass.isInterface() && DirectClassInheritorsSearch.search(aClass).findFirst() == null;
       HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(nameIdentifier)
         .descriptionAndTooltip(JavaErrorBundle.message("sealed.type.inheritor.expected.modifiers", PsiModifier.SEALED, PsiModifier.NON_SEALED, PsiModifier.FINAL)).create();
-      if (!aClass.isInterface()) {
+      if (canBeFinal) {
         QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.FINAL, true, false));
       }
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createModifierListFix(aClass, PsiModifier.SEALED, true, false));

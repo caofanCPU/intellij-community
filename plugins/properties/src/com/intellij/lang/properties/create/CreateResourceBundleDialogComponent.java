@@ -28,7 +28,6 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBList;
-import com.intellij.util.NotNullFunction;
 import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
@@ -186,8 +185,8 @@ public final class CreateResourceBundleDialogComponent {
                                    .getOrDefault(locale, locale.toString()))) + suffix);
   }
 
-  private void combineToResourceBundleIfNeeded(Collection<PsiFile> files) {
-    Collection<PropertiesFile> createdFiles = ContainerUtil.map(files, (NotNullFunction<PsiFile, PropertiesFile>)dom -> {
+  private void combineToResourceBundleIfNeeded(Collection<? extends PsiFile> files) {
+    Collection<PropertiesFile> createdFiles = ContainerUtil.map(files, dom -> {
       final PropertiesFile file = PropertiesImplUtil.getPropertiesFile(dom);
       LOG.assertTrue(file != null, dom.getName());
       return file;
@@ -304,7 +303,7 @@ public final class CreateResourceBundleDialogComponent {
       locales = Collections.emptyList();
       restrictedLocales = ContainerUtil.map(myResourceBundle.getPropertiesFiles(), PropertiesFile::getLocale);
     }
-    myLocalesModel = new CollectionListModel<Locale>(locales) {
+    myLocalesModel = new CollectionListModel<>(locales) {
       @Override
       public void add(@NotNull List<? extends Locale> elements) {
         final List<Locale> currentItems = getItems();
@@ -404,12 +403,13 @@ public final class CreateResourceBundleDialogComponent {
 
   @NotNull
   private ColoredListCellRenderer<Locale> getLocaleRenderer() {
-    return new ColoredListCellRenderer<Locale>() {
+    return new ColoredListCellRenderer<>() {
       @Override
       protected void customizeCellRenderer(@NotNull JList list, Locale locale, int index, boolean selected, boolean hasFocus) {
         if (PropertiesUtil.DEFAULT_LOCALE == locale) {
           append(PropertiesBundle.message("create.resource.bundle.default.locale.presentation"));
-        } else {
+        }
+        else {
           append(myLocaleSuffixes.getOrDefault(locale, locale.toString()));
           append(PropertiesUtil.getPresentableLocale(locale), SimpleTextAttributes.GRAY_ATTRIBUTES);
         }

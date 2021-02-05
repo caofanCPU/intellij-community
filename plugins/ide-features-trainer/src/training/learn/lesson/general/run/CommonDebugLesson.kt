@@ -378,7 +378,7 @@ abstract class CommonDebugLesson(module: Module, id: String, languageId: String)
       triggerByUiComponentAndHighlight(highlightBorder = false, highlightInside = false) { debugTree: XDebuggerTree ->
         val dialog = UIUtil.getParentOfType(JDialog::class.java, debugTree)
         val root = debugTree.root
-        dialog?.title == "Evaluate" && root?.children?.size == 1
+        dialog?.title == XDebuggerBundle.message("xdebugger.evaluate.dialog.title") && root?.children?.size == 1
       }
       proposeModificationRestore(afterFixText)
       test { GuiTestUtil.shortcut(Key.ENTER) }
@@ -464,7 +464,7 @@ fun LessonContext.toggleBreakpointTask(sample: LessonSample,
                                        logicalPosition: () -> LogicalPosition,
                                        checkLine: Boolean = true,
                                        @Nls message: TaskContext.() -> String) {
-  highlightBreakpointGutter(logicalPosition())
+  highlightBreakpointGutter(logicalPosition)
 
   prepareRuntimeTask {
     runWriteAction {
@@ -482,7 +482,7 @@ fun LessonContext.toggleBreakpointTask(sample: LessonSample,
       val breakpoints = lineWithBreakpoints()
       checkExpectedStateOfEditor(sample)
       ?: if (breakpoints.isNotEmpty() && (checkLine && breakpoints != setOf(logicalPosition().line))) {
-        TaskContext.RestoreNotification(incorrectBreakPointsMessage, restorePreviousTaskCallback)
+        TaskContext.RestoreNotification(incorrectBreakPointsMessage, callback = restorePreviousTaskCallback)
       }
       else null
     }

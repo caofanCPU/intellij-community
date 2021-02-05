@@ -20,6 +20,7 @@ import com.intellij.openapi.util.ActionCallback
 import com.intellij.openapi.util.BusyObject
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.NlsContexts
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.wm.*
 import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.openapi.wm.impl.content.ToolWindowContentUi
@@ -45,7 +46,10 @@ import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.InputEvent
 import java.util.*
-import javax.swing.*
+import javax.swing.Icon
+import javax.swing.JComponent
+import javax.swing.JLabel
+import javax.swing.LayoutFocusTraversalPolicy
 import kotlin.math.abs
 
 internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
@@ -66,6 +70,10 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
   override fun getId() = id
 
   override fun getProject() = toolWindowManager.project
+
+  override fun getDecoration(): ToolWindowEx.ToolWindowDecoration {
+    return ToolWindowEx.ToolWindowDecoration(icon, additionalGearActions)
+  }
 
   var windowInfo: WindowInfo = windowInfo
     private set
@@ -180,7 +188,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     get() = decorator
 
   val hasFocus: Boolean
-    get() = decorator != null && SwingUtilities.findFocusOwner(decorator) != null
+    get() = decorator?.hasFocus() ?: false
 
   fun setFocusedComponent(component: Component) {
     toolWindowFocusWatcher?.setFocusedComponentImpl(component)
@@ -242,6 +250,18 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
   override fun isVisible() = windowInfo.isVisible
 
   override fun getAnchor() = windowInfo.anchor
+
+  override fun getLargeStripeAnchor() = windowInfo.largeStripeAnchor
+
+  override fun setLargeStripeAnchor(anchor: ToolWindowAnchor) {
+    toolWindowManager.setLargeStripeAnchor(id, anchor)
+  }
+
+  override fun isVisibleOnLargeStripe() = windowInfo.isVisibleOnLargeStripe
+
+  override fun setVisibleOnLargeStripe(visible: Boolean) {
+    toolWindowManager.setVisibleOnLargeStripe(id, visible)
+  }
 
   override fun setAnchor(anchor: ToolWindowAnchor, runnable: Runnable?) {
     EDT.assertIsEdt()
@@ -516,7 +536,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
 
   @JvmOverloads
   fun createPopupGroup(skipHideAction: Boolean = false): ActionGroup {
-    val group = GearActionGroup()
+    val group = GearActionGroup(this)
     if (!skipHideAction) {
       group.addSeparator()
       group.add(HideAction())
@@ -559,7 +579,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     decorator?.background = color
   }
 
-  private inner class GearActionGroup : DefaultActionGroup(), DumbAware {
+  private inner class GearActionGroup(toolWindow: ToolWindow) : DefaultActionGroup(), DumbAware {
     init {
       templatePresentation.icon = AllIcons.General.GearPlain
       templatePresentation.text = IdeBundle.message("show.options.menu")
@@ -582,7 +602,11 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
       addAction(toggleToolbarGroup).setAsSecondary(true)
       addSeparator()
       add(ActionManager.getInstance().getAction("TW.ViewModeGroup"))
-      add(ToolWindowMoveAction.Group())
+      if (Registry.`is`("ide.new.stripes.ui")) {
+        add(SquareStripeButton.createMoveGroup(project, null, toolWindow))
+      } else {
+        add(ToolWindowMoveAction.Group())
+      }
       add(ResizeActionGroup())
       addSeparator()
       add(RemoveStripeButtonAction())

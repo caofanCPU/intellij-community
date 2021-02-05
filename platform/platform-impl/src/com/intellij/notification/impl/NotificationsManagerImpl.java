@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.notification.impl;
 
 import com.intellij.codeInsight.hint.TooltipController;
@@ -100,9 +100,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
   }
 
   public void expireAll() {
-    for (Notification notification : getNotificationsOfType(Notification.class, null)) {
-      notification.expire();
-    }
+    EventLog.expireNotifications();
  }
 
   @Override
@@ -262,7 +260,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
                 DataContext context = source instanceof Component ? DataManager.getInstance().getDataContext((Component)source) : null;
 
                 NotificationCollector.getInstance()
-                  .logNotificationActionInvoked(notification, action, NotificationCollector.NotificationPlace.TOOL_WINDOW);
+                  .logNotificationActionInvoked(project, notification, action, NotificationCollector.NotificationPlace.TOOL_WINDOW);
 
                 Notification.fire(notification, action, context);
               }
@@ -438,7 +436,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
       }
     };
     HTMLEditorKit kit = new UIUtil.JBWordWrapHtmlEditorKit();
-    kit.getStyleSheet().addRule("a {color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.linkColor()) + "}");
+    kit.getStyleSheet().addRule("a {color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.Foreground.ENABLED) + "}");
     text.setEditorKit(kit);
     text.setForeground(layoutData.textColor);
 
@@ -541,7 +539,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
 
       text.setCaret(new TextCaret(layoutData));
 
-      expandAction = new LinkLabel<>(null, AllIcons.Ide.Notification.Expand, new LinkListener<Void>() {
+      expandAction = new LinkLabel<>(null, AllIcons.Ide.Notification.Expand, new LinkListener<>() {
         @Override
         public void linkSelected(LinkLabel<Void> link, Void ignored) {
           layoutData.showMinSize = !layoutData.showMinSize;
@@ -554,7 +552,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
             pane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
             link.setIcon(AllIcons.Ide.Notification.Expand);
             link.setHoveringIcon(AllIcons.Ide.Notification.ExpandHover);
-            NotificationCollector.getInstance().logNotificationBalloonCollapsed(notification);
+            NotificationCollector.getInstance().logNotificationBalloonCollapsed(layoutData.project, notification);
           }
           else {
             text.select(0, 0);
@@ -562,7 +560,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
             pane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
             link.setIcon(AllIcons.Ide.Notification.Collapse);
             link.setHoveringIcon(AllIcons.Ide.Notification.CollapseHover);
-            NotificationCollector.getInstance().logNotificationBalloonExpanded(notification);
+            NotificationCollector.getInstance().logNotificationBalloonExpanded(layoutData.project, notification);
           }
 
           text.setPreferredSize(size);
@@ -701,7 +699,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
 
     ApplicationManager.getApplication().getMessageBus().connect(balloon).subscribe(LafManagerListener.TOPIC, source -> {
       HTMLEditorKit newKit = new UIUtil.JBWordWrapHtmlEditorKit();
-      newKit.getStyleSheet().addRule("a {color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.linkColor()) + "}");
+      newKit.getStyleSheet().addRule("a {color: " + ColorUtil.toHtmlColor(JBUI.CurrentTheme.Link.Foreground.ENABLED) + "}");
       text.setEditorKit(newKit);
       text.setText(textContent);
       text.revalidate();
@@ -817,7 +815,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
           @Override
           public void linkSelected(LinkLabel<AnAction> aSource, AnAction action) {
             NotificationCollector.getInstance()
-              .logNotificationActionInvoked(notification, action, NotificationCollector.NotificationPlace.BALLOON);
+              .logNotificationActionInvoked(null, notification, action, NotificationCollector.NotificationPlace.BALLOON);
             Notification.fire(notification, action, DataManager.getInstance().getDataContext(aSource));
           }
         }, action));
@@ -847,7 +845,7 @@ public final class NotificationsManagerImpl extends NotificationsManager {
 
   private static void addDropDownAction(@NotNull Notification notification,
                                         NotificationActionPanel actionPanel) {
-    DropDownAction action = new DropDownAction(notification.getDropDownText(), new LinkListener<Void>() {
+    DropDownAction action = new DropDownAction(notification.getDropDownText(), new LinkListener<>() {
       @Override
       public void linkSelected(LinkLabel<Void> link, Void ignored) {
         NotificationActionPanel parent = (NotificationActionPanel)link.getParent();

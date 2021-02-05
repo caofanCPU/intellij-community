@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.updater;
 
 import org.apache.log4j.FileAppender;
@@ -20,6 +20,7 @@ import java.util.zip.ZipInputStream;
 
 public class Runner {
   private static final String PATCH_FILE_NAME = "patch-file.zip";
+  private static final String LOG_FILE_NAME = "idea_updater.log";
   private static final String ERROR_LOG_FILE_NAME = "idea_updater_error.log";  // must be equal to UpdateCheckerComponent.ERROR_LOG_FILE_NAME
 
   private static Logger logger = null;
@@ -34,6 +35,7 @@ public class Runner {
     return ourCaseSensitiveFs;
   }
 
+  @SuppressWarnings("UseOfSystemOutOrSystemErr")
   public static void main(String[] args) {
     initLogger();
     try {
@@ -46,17 +48,20 @@ public class Runner {
           effectiveArgs.add(arg);
         }
       }
+      //noinspection SSBasedInspection
       _main(effectiveArgs.toArray(new String[0]));
     }
     catch (Throwable t) {
       logger().error("internal error", t);
+      t.printStackTrace(System.err);
       System.exit(2);
     }
   }
 
   private static void initLogger() {
-    String logDirectory = Utils.findDirectory(1_000_000L);
-    logPath = new File(logDirectory, "idea_updater.log").getAbsolutePath();
+    String dirPath = System.getProperty("idea.updater.log", System.getProperty("java.io.tmpdir", System.getProperty("user.home", ".")));
+    Path logDir = Paths.get(dirPath).toAbsolutePath().normalize();
+    logPath = logDir.resolve(LOG_FILE_NAME).toString();
 
     FileAppender update = new FileAppender();
     update.setFile(logPath);
@@ -66,7 +71,7 @@ public class Runner {
     update.activateOptions();
 
     FileAppender updateError = new FileAppender();
-    updateError.setFile(new File(logDirectory, ERROR_LOG_FILE_NAME).getAbsolutePath());
+    updateError.setFile(logDir.resolve(ERROR_LOG_FILE_NAME).toString());
     updateError.setLayout(new PatternLayout("%d{dd/MM HH:mm:ss} %-5p %C{1}.%M - %m%n"));
     updateError.setThreshold(Level.ERROR);
     updateError.setAppend(false);

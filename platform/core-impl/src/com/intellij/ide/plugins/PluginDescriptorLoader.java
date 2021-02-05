@@ -166,7 +166,7 @@ public final class PluginDescriptorLoader {
     return descriptor;
   }
 
-  static boolean collectPluginDirectoryContents(@NotNull Path file, @NotNull List<Path> pluginJarFiles, @NotNull List<Path> dirs) {
+  static boolean collectPluginDirectoryContents(@NotNull Path file, @NotNull List<Path> pluginJarFiles, @NotNull List<? super Path> dirs) {
     try (DirectoryStream<Path> s = Files.newDirectoryStream(file.resolve("lib"))) {
       for (Path childFile : s) {
         if (Files.isDirectory(childFile)) {
@@ -197,7 +197,7 @@ public final class PluginDescriptorLoader {
    * c) jar with name close to plugin's directory name, e.g. kotlin-XXX.jar is before all-open-XXX.jar
    * d) shorter name, e.g. android.jar is before android-base-common.jar
    */
-  private static void putMoreLikelyPluginJarsFirst(@NotNull Path pluginDir, @NotNull List<Path> filesInLibUnderPluginDir) {
+  private static void putMoreLikelyPluginJarsFirst(@NotNull Path pluginDir, @NotNull List<? extends Path> filesInLibUnderPluginDir) {
     String pluginDirName = pluginDir.getFileName().toString();
 
     filesInLibUnderPluginDir.sort((o1, o2) -> {
@@ -486,13 +486,10 @@ public final class PluginDescriptorLoader {
   public static @Nullable IdeaPluginDescriptorImpl tryLoadFullDescriptor(@NotNull IdeaPluginDescriptorImpl descriptor) {
     return isFull(descriptor) ?
            descriptor :
-           PluginManager.loadDescriptor(
-             descriptor.getPluginPath(),
-             PluginManagerCore.PLUGIN_XML,
-             Collections.emptySet(),
-             descriptor.isBundled(),
-             createPathResolverForPlugin(descriptor, null)
-           );
+           PluginManager.loadDescriptor(descriptor.getPluginPath(),
+                                        Collections.emptySet(),
+                                        descriptor.isBundled(),
+                                        createPathResolverForPlugin(descriptor, null));
   }
 
   static @NotNull PathBasedJdomXIncluder.PathResolver<?> createPathResolverForPlugin(@NotNull IdeaPluginDescriptorImpl descriptor,
@@ -517,9 +514,11 @@ public final class PluginDescriptorLoader {
     IdeaPluginDescriptorImpl fullDescriptor = tryLoadFullDescriptor(descriptor);
     if (fullDescriptor == null) {
       PluginManagerCore.getLogger().error("Could not load full descriptor for plugin " + descriptor.getPluginPath());
-      fullDescriptor = descriptor;
+      return descriptor;
     }
-    return fullDescriptor;
+    else {
+      return fullDescriptor;
+    }
   }
 
   private static boolean isFull(@NotNull IdeaPluginDescriptorImpl descriptor) {

@@ -123,6 +123,10 @@ abstract class WorkspaceEntityBase : ReferableWorkspaceEntity, Any() {
     }
   }
 
+  override fun <E : WorkspaceEntity> createReference(): EntityReference<E> {
+    return EntityReferenceImpl(this.id)
+  }
+
   override fun toString(): String = "$id"
 
   override fun equals(other: Any?): Boolean {
@@ -208,7 +212,7 @@ abstract class WorkspaceEntityData<E : WorkspaceEntity> : Cloneable {
       .all { it.get(this) == it.get(other) }
   }
 
-  fun equalsIgnoringEntitySource(other: Any?): Boolean {
+  open fun equalsIgnoringEntitySource(other: Any?): Boolean {
     if (other == null) return false
     if (this::class != other::class) return false
 

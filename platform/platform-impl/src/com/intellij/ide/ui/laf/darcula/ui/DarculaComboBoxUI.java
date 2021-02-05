@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.ui.laf.darcula.ui;
 
 import com.intellij.ide.ui.laf.darcula.DarculaUIUtil;
@@ -9,6 +9,7 @@ import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.*;
+import com.intellij.ui.popup.WizardPopup;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.ui.JBInsets;
@@ -39,11 +40,9 @@ import static com.intellij.ide.ui.laf.darcula.DarculaUIUtil.*;
  * @author Konstantin Bulenkov
  */
 public class DarculaComboBoxUI extends BasicComboBoxUI implements Border, ErrorBorderCapable {
-
   @SuppressWarnings("UnregisteredNamedColor")
   private static final Color NON_EDITABLE_BACKGROUND = JBColor.namedColor("ComboBox.nonEditableBackground",
-                                                                          JBColor.namedColor("ComboBox.darcula.nonEditableBackground",
-                                                                                             new JBColor(0xfcfcfc, 0x3c3f41)));
+                                                                          JBColor.namedColor("ComboBox.darcula.nonEditableBackground", new JBColor(0xfcfcfc, 0x3c3f41)));
 
   private float myArc = COMPONENT_ARC.getFloat();
   private Insets myBorderCompensation = JBUI.insets(1);
@@ -111,12 +110,60 @@ public class DarculaComboBoxUI extends BasicComboBoxUI implements Border, ErrorB
   }
 
   @Override
-  protected ComboPopup createPopup() {
-    if (comboBox.getClientProperty(DarculaJBPopupComboPopup.CLIENT_PROP) != null) {
-      //noinspection unchecked
-      return new DarculaJBPopupComboPopup<Object>(comboBox);
+  protected KeyListener createKeyListener() {
+    KeyListener parentHandler = super.createKeyListener();
+    return new KeyListener() {
+      @Override
+      public void keyTyped(KeyEvent e) {
+        parentHandler.keyTyped(e);
+      }
+
+      @Override
+      public void keyPressed(KeyEvent e) {
+        if (hasSwingPopup(comboBox)) {
+          parentHandler.keyPressed(e);
+        }
+        else if (!isNavigationKey(e.getKeyCode(), e.getModifiers()) &&
+                 comboBox.isEnabled() && comboBox.getModel().getSize() != 0 &&
+                 isTypeAheadKey(e) && e.getKeyChar() != KeyEvent.CHAR_UNDEFINED) {
+          comboBox.showPopup();
+
+          if (popup.isVisible() && popup instanceof DarculaJBPopupComboPopup) {
+            @SuppressWarnings("rawtypes")
+            WizardPopup comboPopup = ((DarculaJBPopupComboPopup)popup).getComboPopup();
+            comboPopup.dispatch(e);
+          }
+        }
+      }
+
+      @Override
+      public void keyReleased(KeyEvent e) {
+        parentHandler.keyReleased(e);
+      }
+    };
+  }
+
+  public static boolean hasSwingPopup(JComponent component) {
+    return component.getClientProperty(DarculaJBPopupComboPopup.CLIENT_PROP) == null;
+  }
+
+  private boolean isNavigationKey(int keyCode, int modifiers) {
+    InputMap inputMap = comboBox.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+    KeyStroke key = KeyStroke.getKeyStroke(keyCode, modifiers);
+
+    if (inputMap != null && inputMap.get(key) != null) {
+      return true;
     }
-    return new CustomComboPopup(comboBox);
+    return false;
+  }
+
+  private static boolean isTypeAheadKey(KeyEvent e) {
+    return !e.isAltDown() && ((e.getModifiersEx() & Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()) == 0);
+  }
+
+  @Override
+  protected ComboPopup createPopup() {
+    return hasSwingPopup(comboBox) ? new CustomComboPopup(comboBox) : new DarculaJBPopupComboPopup<>(comboBox);
   }
 
   protected PropertyChangeListener createPropertyListener() {
@@ -235,7 +282,7 @@ public class DarculaComboBoxUI extends BasicComboBoxUI implements Border, ErrorB
   @Override
   public void paint(Graphics g, JComponent c) {
     Container parent = c.getParent();
-    if (parent != null) {
+    if (parent != null && c.isOpaque()) {
       g.setColor(DarculaUIUtil.isTableCellEditor(c) && editor != null ? editor.getBackground() : parent.getBackground());
       g.fillRect(0, 0, c.getWidth(), c.getHeight());
     }
@@ -294,7 +341,6 @@ public class DarculaComboBoxUI extends BasicComboBoxUI implements Border, ErrorB
 
   @Override
   public void paintCurrentValue(Graphics g, Rectangle bounds, boolean hasFocus) {
-    //noinspection unchecked
     ListCellRenderer<Object> renderer = comboBox.getRenderer();
     Object value = comboBox.getSelectedItem();
     Component c = renderer.getListCellRendererComponent(listBox, value, -1, false, false);

@@ -1,6 +1,7 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.importing;
 
+import com.intellij.ide.highlighter.ModuleFileType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
@@ -16,12 +17,12 @@ import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.StdModuleTypes;
 import com.intellij.openapi.projectRoots.ProjectJdkTable;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.TestModuleProperties;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.THashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.gradle.model.ExternalProject;
 import org.jetbrains.plugins.gradle.service.project.GradleProjectResolverUtil;
@@ -111,20 +112,22 @@ public class GradleMiscImportingTest extends GradleJavaImportingTestCase {
 
   @Test
   public void testPreviewLanguageLevel() throws Exception {
+    int feature = LanguageLevel.HIGHEST.toJavaVersion().feature;
     importProject(
       "apply plugin: 'java'\n" +
-      "sourceCompatibility = 14\n" +
+      "sourceCompatibility = " + feature+ "\n" +
       "apply plugin: 'java'\n" +
       "compileTestJava {\n" +
-      "  sourceCompatibility = 14\n" +
+      "  sourceCompatibility = " + feature +"\n" +
       "  options.compilerArgs << '--enable-preview'" +
       "}\n"
     );
 
     assertModules("project", "project.main", "project.test");
-    assertEquals(LanguageLevel.JDK_14, getLanguageLevelForModule("project"));
-    assertEquals(LanguageLevel.JDK_14, getLanguageLevelForModule("project.main"));
-    assertEquals(LanguageLevel.JDK_14_PREVIEW, getLanguageLevelForModule("project.test"));
+    assertEquals(LanguageLevel.HIGHEST, getLanguageLevelForModule("project"));
+    assertEquals(LanguageLevel.HIGHEST, getLanguageLevelForModule("project.main"));
+    LanguageLevel highestPreview = LanguageLevel.values()[LanguageLevel.HIGHEST.ordinal() + 1];
+    assertEquals(highestPreview, getLanguageLevelForModule("project.test"));
   }
 
   @Test
@@ -305,6 +308,29 @@ public class GradleMiscImportingTest extends GradleJavaImportingTestCase {
     assertThat(taskNames).containsOnlyOnce("\"descriptive task name\"");
   }
 
+  @Test
+  public void testImportProjectWithExistingFakeModule() {
+    // After first opening of the project, IJ creates a fake module at the project root
+    edt(() -> {
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        Module module = ModuleManager.getInstance(myProject).newModule(
+          getProjectPath() + "/" + "project" + ModuleFileType.DOT_DEFAULT_EXTENSION, StdModuleTypes.JAVA.getId());
+        ModifiableRootModel modifiableModel = ModuleRootManager.getInstance(module).getModifiableModel();
+        modifiableModel.addContentEntry(myProjectRoot);
+        modifiableModel.inheritSdk();
+        modifiableModel.commit();
+      });
+    });
+
+    Module module = ModuleManager.getInstance(myProject).findModuleByName("project");
+    assertFalse(ExternalSystemApiUtil.isExternalSystemAwareModule(GradleConstants.SYSTEM_ID, module));
+
+    assertNoThrowable(() -> importProject());
+
+    Module moduleAfter = ModuleManager.getInstance(myProject).findModuleByName("project");
+    assertTrue(ExternalSystemApiUtil.isExternalSystemAwareModule(GradleConstants.SYSTEM_ID, moduleAfter));
+  }
+
   private static void assertExternalProjectIds(Map<String, ExternalProject> projectMap, String projectId, String... sourceSetModulesIds) {
     ExternalProject externalProject = projectMap.get(projectId);
     assertEquals(projectId, externalProject.getId());
@@ -316,7 +342,7 @@ public class GradleMiscImportingTest extends GradleJavaImportingTestCase {
   @NotNull
   private Map<String, ExternalProject> getExternalProjectsMap() {
     ExternalProject rootExternalProject = ExternalProjectDataCache.getInstance(myProject).getRootExternalProject(getProjectPath());
-    final Map<String, ExternalProject> externalProjectMap = new THashMap<>();
+    final Map<String, ExternalProject> externalProjectMap = new HashMap<>();
     if (rootExternalProject == null) return externalProjectMap;
     ArrayDeque<ExternalProject> queue = new ArrayDeque<>();
     queue.add(rootExternalProject);

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.jarRepository;
 
 import com.intellij.CommonBundle;
@@ -32,12 +32,12 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.util.Processor;
 import com.intellij.util.concurrency.SequentialTaskExecutor;
-import gnu.trove.THashMap;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.transfer.RepositoryOfflineException;
 import org.eclipse.aether.transfer.TransferCancelledException;
 import org.eclipse.aether.version.Version;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -256,6 +256,28 @@ public final class JarRepositoryManager {
     return submitSyncJob(newOrderRootResolveJob(desc, artifactKinds, effectiveRepos, copyTo));
   }
 
+  /**
+   * Load dependencies within the caller thread with the progress being tracked by the directly provided {@code progressIndicator}.
+   */
+  @ApiStatus.Internal
+  @NotNull
+  public static Collection<OrderRoot> loadDependenciesSync(@NotNull Project project,
+                                                           @NotNull RepositoryLibraryProperties libraryProps,
+                                                           boolean loadSources,
+                                                           boolean loadJavadoc,
+                                                           @Nullable String copyTo,
+                                                           @Nullable Collection<RemoteRepositoryDescription> repositories,
+                                                           @NotNull ProgressIndicator progressIndicator) {
+    ApplicationManager.getApplication().assertIsNonDispatchThread();
+    final JpsMavenRepositoryLibraryDescriptor libDescriptor = libraryProps.getRepositoryLibraryDescriptor();
+    if (libDescriptor.getMavenId() != null) {
+      EnumSet<ArtifactKind> kinds = ArtifactKind.kindsOf(loadSources, loadJavadoc, libraryProps.getPackaging());
+      Collection<RemoteRepositoryDescription> effectiveRepos = addDefaultsIfEmpty(project, repositories);
+      return newOrderRootResolveJob(libDescriptor, kinds, effectiveRepos, copyTo).apply(progressIndicator);
+    }
+    return Collections.emptyList();
+  }
+
   @NotNull
   private static Collection<RemoteRepositoryDescription> addDefaultsIfEmpty(@NotNull Project project,
                                                                             @Nullable Collection<RemoteRepositoryDescription> repositories) {
@@ -336,7 +358,7 @@ public final class JarRepositoryManager {
               final List<RepositoryArtifactDescription> artifacts = MavenRepositoryServicesManager.findArtifacts(template, serviceUrl);
               if (!artifacts.isEmpty()) {
                 final List<RemoteRepositoryDescription> repositories = MavenRepositoryServicesManager.getRepositories(serviceUrl);
-                final Map<String, RemoteRepositoryDescription> map = new THashMap<>();
+                final Map<String, RemoteRepositoryDescription> map = new HashMap<>();
                 for (RemoteRepositoryDescription repository : repositories) {
                   map.put(repository.getId(), repository);
                 }

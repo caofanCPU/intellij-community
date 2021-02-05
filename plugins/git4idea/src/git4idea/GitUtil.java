@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea;
 
 import com.intellij.dvcs.DvcsUtil;
@@ -33,7 +33,6 @@ import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Convertor;
-import com.intellij.util.containers.OpenTHashSet;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.vcs.log.Hash;
 import com.intellij.vcs.log.impl.HashImpl;
@@ -53,6 +52,7 @@ import git4idea.repo.GitRepositoryManager;
 import git4idea.util.GitSimplePathsBrowser;
 import git4idea.util.GitUIUtil;
 import git4idea.util.StringScanner;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -124,6 +124,7 @@ public final class GitUtil {
     String content = readContent(dotGit);
     if (content == null) return null;
     String pathToDir = parsePathToRepository(content);
+    if (pathToDir == null) return null;
     File file = findRealRepositoryDir(rootDir.toNioPath(), pathToDir);
     if (file == null) return null;
     return VcsUtil.getVirtualFileWithRefresh(file);
@@ -133,19 +134,20 @@ public final class GitUtil {
   private static File findRealRepositoryDir(@NotNull @NonNls Path rootPath, @NotNull @NonNls String path) {
     if (!FileUtil.isAbsolute(path)) {
       String canonicalPath = FileUtil.toCanonicalPath(FileUtil.join(rootPath.toString(), path), true);
-      if (canonicalPath == null) {
-        return null;
-      }
       path = FileUtil.toSystemIndependentName(canonicalPath);
     }
     File file = new File(path);
     return file.isDirectory() ? file : null;
   }
 
-  @NotNull
+  @Nullable
   private static String parsePathToRepository(@NotNull @NonNls String content) {
     content = content.trim();
-    return content.startsWith(REPO_PATH_LINK_PREFIX) ? content.substring(REPO_PATH_LINK_PREFIX.length()).trim() : content;
+    if (content.startsWith(REPO_PATH_LINK_PREFIX)) {
+      content = content.substring(REPO_PATH_LINK_PREFIX.length()).trim();
+    }
+    if (content.isEmpty() || content.contains("\n")) return null;
+    return content;
   }
 
   @Nullable
@@ -350,26 +352,6 @@ public final class GitUtil {
    * Return a git root for the file path (the parent directory with ".git" subdirectory)
    *
    * @param filePath a file path
-   * @return git root for the file
-   * @throws IllegalArgumentException if the file is not under git
-   * @throws VcsException             if the file is not under git
-   *
-   * @deprecated because uses the java.io.File.
-   * @use GitRepositoryManager#getRepositoryForFile().
-   */
-  @Deprecated
-  public static VirtualFile getGitRoot(@NotNull FilePath filePath) throws VcsException {
-    VirtualFile root = getGitRootOrNull(filePath);
-    if (root != null) {
-      return root;
-    }
-    throw new VcsException(GitBundle.message("file.is.not.under.root", filePath));
-  }
-
-  /**
-   * Return a git root for the file path (the parent directory with ".git" subdirectory)
-   *
-   * @param filePath a file path
    * @return git root for the file or null if the file is not under git
    *
    * @deprecated because uses the java.io.File.
@@ -396,27 +378,6 @@ public final class GitUtil {
 
   public static boolean isGitRoot(@NotNull File folder) {
     return isGitRoot(folder.toPath());
-  }
-
-  /**
-   * Return a git root for the file (the parent directory with ".git" subdirectory)
-   *
-   * @param file the file to check
-   * @return git root for the file
-   * @throws VcsException if the file is not under git
-   *
-   * @deprecated because uses the java.io.File.
-   * @use GitRepositoryManager#getRepositoryForFile().
-   */
-  @Deprecated
-  public static VirtualFile getGitRoot(@NotNull final VirtualFile file) throws VcsException {
-    final VirtualFile root = gitRootOrNull(file);
-    if (root != null) {
-      return root;
-    }
-    else {
-      throw new VcsException(GitBundle.message("file.is.not.under.root", file.getPath()));
-    }
   }
 
   /**
@@ -977,7 +938,7 @@ public final class GitUtil {
   @NotNull
   public static Collection<Change> findCorrespondentLocalChanges(@NotNull ChangeListManager changeListManager,
                                                                  @NotNull Collection<? extends Change> originalChanges) {
-    OpenTHashSet<Change> allChanges = new OpenTHashSet<>(changeListManager.getAllChanges());
+    ObjectOpenHashSet<Change> allChanges = new ObjectOpenHashSet<>(changeListManager.getAllChanges());
     return ContainerUtil.mapNotNull(originalChanges, allChanges::get);
   }
 
@@ -1065,6 +1026,7 @@ public final class GitUtil {
     }
 
     String pathToDir = parsePathToRepository(content);
+    if (pathToDir == null) return false;
     return findRealRepositoryDir(rootDir, pathToDir) != null;
   }
 

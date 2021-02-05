@@ -13,6 +13,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleSettingsFacade;
+import com.intellij.psi.codeStyle.JavaFileCodeStyleFacade;
 import com.intellij.psi.impl.light.*;
 import com.intellij.psi.impl.source.*;
 import com.intellij.psi.impl.source.codeStyle.CodeEditUtil;
@@ -57,8 +58,8 @@ public final class PsiElementFactoryImpl extends PsiJavaParserFacadeImpl impleme
 
   private PsiClass createArrayClass(LanguageLevel level) {
     String text = level.isAtLeast(LanguageLevel.JDK_1_5) ?
-                  "public class __Array__<T> {\n public final int length;\n public T[] clone() {}\n}" :
-                  "public class __Array__{\n public final int length;\n public Object clone() {}\n}";
+                  "public static class __Array__<T> {\n public final int length;\n public T[] clone() {}\n}" :
+                  "public static class __Array__{\n public final int length;\n public Object clone() {}\n}";
     PsiClass psiClass = ((PsiExtensibleClass)createClassFromText(text, null)).getOwnInnerClasses().get(0);
     ensureNonWritable(psiClass);
     PsiFile file = psiClass.getContainingFile();
@@ -555,7 +556,8 @@ public final class PsiElementFactoryImpl extends PsiJavaParserFacadeImpl impleme
     PsiVariable variable = (PsiVariable)statement.getDeclaredElements()[0];
     replace(variable.getTypeElement(), createTypeElement(GenericsUtil.getVariableTypeByExpressionType(type)), text);
 
-    boolean generateFinalLocals = JavaCodeStyleSettingsFacade.getInstance(myManager.getProject()).isGenerateFinalLocals();
+    boolean generateFinalLocals =
+      context != null && JavaFileCodeStyleFacade.forContext(context.getContainingFile()).isGenerateFinalLocals();
     PsiUtil.setModifierProperty(variable, PsiModifier.FINAL, generateFinalLocals);
 
     if (initializer != null) {

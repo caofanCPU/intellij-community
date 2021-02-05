@@ -100,6 +100,7 @@ internal object OpenLessonActivities {
               "${projectWhereToStartLesson.name}: 0. learnProject is null but the current project (${projectWhereToStartLesson.name})" +
               "is LearnProject then just getFileInLearnProject")
             LearningUiManager.learnProject = projectWhereToStartLesson
+            learnProject = projectWhereToStartLesson
           }
         }
         learnProject.isOpen && projectWhereToStartLesson != learnProject -> {
@@ -115,12 +116,11 @@ internal object OpenLessonActivities {
         }
       }
 
-      if (projectWhereToStartLesson != learnProject) {
-        LOG.error(Exception("Invalid learning project initialization: projectWhereToStartLesson = $projectWhereToStartLesson, learnProject = $learnProject"))
-        return
-      }
-
-      if (lesson.lessonType == LessonType.PROJECT) {
+      if (lesson.lessonType.isProject) {
+        if (projectWhereToStartLesson != learnProject) {
+          LOG.error(Exception("Invalid learning project initialization: projectWhereToStartLesson = $projectWhereToStartLesson, learnProject = $learnProject"))
+          return
+        }
         cleanupAndOpenLesson(projectWhereToStartLesson, lesson)
       }
       else {
@@ -166,6 +166,7 @@ internal object OpenLessonActivities {
     if (lesson.lessonType != LessonType.SCRATCH || LearningUiManager.learnProject == project) {
       // do not change view environment for scratch lessons in user project
       hideOtherViews(project)
+      ToolWindowManager.getInstance(project).getToolWindow(LearnToolWindowFactory.LEARN_TOOL_WINDOW)?.show()
     }
 
     LOG.debug("${project.name}: Add listeners to lesson")
@@ -173,7 +174,9 @@ internal object OpenLessonActivities {
 
     //open next lesson if current is passed
     LOG.debug("${project.name}: Set lesson view")
-    LearningUiManager.activeToolWindow?.setLearnPanel()
+    LearningUiManager.activeToolWindow = LearnToolWindowFactory.learnWindowPerProject[project]?.also {
+      it.setLearnPanel()
+    }
     LOG.debug("${project.name}: XmlLesson onStart()")
     lesson.onStart()
 
@@ -217,12 +220,12 @@ internal object OpenLessonActivities {
 
     //4. Process lesson
     LOG.debug("${project.name}: 4. Process lesson")
-    if (lesson is KLesson) processDslLesson(lesson, textEditor, project)
+    if (lesson is KLesson) processDslLesson(lesson, textEditor, project, vf)
     else error("Unknown lesson format")
   }
 
-  private fun processDslLesson(lesson: KLesson, textEditor: TextEditor?, projectWhereToStartLesson: Project) {
-    val executor = LessonExecutor(lesson, projectWhereToStartLesson, textEditor?.editor)
+  private fun processDslLesson(lesson: KLesson, textEditor: TextEditor?, projectWhereToStartLesson: Project, vf: VirtualFile?) {
+    val executor = LessonExecutor(lesson, projectWhereToStartLesson, textEditor?.editor, vf)
     val lessonContext = LessonContextImpl(executor)
     LessonManager.instance.initDslLesson(textEditor?.editor, lesson, executor)
     lesson.lessonContent(lessonContext)
@@ -241,13 +244,29 @@ internal object OpenLessonActivities {
       lesson.addLessonListener(statLessonListener)
   }
 
+  private fun openReadme(project: Project) {
+    val manager = ProjectRootManager.getInstance(project)
+    val root = manager.contentRoots[0]
+    val readme = root?.findFileByRelativePath("README.md") ?: return
+    FileEditorManager.getInstance(project).openFile(readme, true, true)
+  }
+
   fun openLearnProjectFromWelcomeScreen() {
     initLearnProject(null) { project ->
       StartupManager.getInstance(project).runAfterOpened {
         invokeLater {
+          openReadme(project)
           hideOtherViews(project)
           showModules(project)
           CourseManager.instance.unfoldModuleOnInit = null
+          // Try to fix PyCharm double startup indexing :(
+          val openWhenSmart = {
+            showModules(project)
+            DumbService.getInstance(project).runWhenSmart {
+              showModules(project)
+            }
+          }
+          Alarm().addRequest(openWhenSmart, 500)
         }
       }
     }
@@ -268,10 +287,9 @@ internal object OpenLessonActivities {
       val toolWindowManager = ToolWindowManager.getInstance(myLearnProject)
       val learnToolWindow = toolWindowManager.getToolWindow(LearnToolWindowFactory.LEARN_TOOL_WINDOW)
       if (learnToolWindow != null) {
-        val runnable = if (lesson.properties.showLearnToolwindowAtStart) null else Runnable { learnToolWindow.hide() }
-        learnToolWindow.show(runnable)
         DumbService.getInstance(myLearnProject).runWhenSmart {
-          // Try to fix PyChar double startup indexing :(
+          if (!lesson.properties.showLearnToolwindowAtStart) learnToolWindow.show()
+          // Try to fix PyCharm double startup indexing :(
           val openWhenSmart = {
             DumbService.getInstance(myLearnProject).runWhenSmart {
               openLessonForPreparedProject(myLearnProject, lesson)

@@ -1,12 +1,10 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.review.details
 
 import circlet.client.api.ProjectKey
 import circlet.client.api.identifier
 import circlet.code.api.*
 import circlet.code.codeReview
-import circlet.platform.api.Batch
-import circlet.platform.api.BatchInfo
 import circlet.platform.api.InitializedChannel
 import circlet.platform.api.TID
 import circlet.platform.client.FluxSourceItem
@@ -21,7 +19,10 @@ import libraries.coroutines.extra.LifetimeSource
 import libraries.coroutines.extra.launch
 import libraries.coroutines.extra.nested
 import runtime.Ui
+import runtime.batch.Batch
+import runtime.batch.BatchInfo
 import runtime.reactive.*
+import runtime.reactive.property.mapInit
 
 private const val MAX_CHANGES_TO_LOAD = 1024
 
@@ -31,16 +32,27 @@ internal class SpaceReviewChangesVmImpl(
   override val projectKey: ProjectKey,
   override val reviewIdentifier: ReviewIdentifier,
   override val reviewId: TID,
-  override val selectedCommits: Property<List<ReviewCommitListItem>>,
+  override val allCommits: Property<List<SpaceReviewCommitListItem>>,
   override val participantsVm: Property<SpaceReviewParticipantsVm?>,
-  override val listSelection: MutableProperty<ListSelection<SpaceReviewChange>>,
   override val infoByRepos: Map<String, SpaceRepoInfo>,
 ) : SpaceReviewChangesVm,
     SpaceVmWithClient {
 
-  val lifetimeSource = lifetime.nested()
+  private val lifetimeSource = lifetime.nested()
 
-  override val changes: Property<Map<String, ChangesWithDiscussion>?> = mapInit(selectedCommits, null) { selectedCommits ->
+  override val selectedChanges: MutableProperty<ListSelection<SpaceReviewChange>> =
+    mutableProperty(ListSelection.create(emptyList<SpaceReviewChange>(), null))
+
+  override val selectedCommitIndices: MutableProperty<List<Int>> = mutableProperty(emptyList())
+
+  override val selectedCommits: Property<List<SpaceReviewCommitListItem>> =
+    mapInit(selectedCommitIndices, allCommits, emptyList()) { indices, commits ->
+      if (indices.isEmpty() || commits.isEmpty()) return@mapInit commits
+
+      indices.map { commits[it] }
+    }
+
+  override val changes: LoadingProperty<Map<String, ChangesWithDiscussion>> = load(selectedCommits) { selectedCommits ->
     selectedCommits
       .map { RevisionInReview(it.repositoryInReview.name, it.commitWithGraph.commit.id) }
       .groupBy { it.repository }

@@ -1,10 +1,12 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.source;
 
 import com.intellij.application.options.CodeStyle;
 import com.intellij.formatting.FormatTextRanges;
 import com.intellij.lang.ASTNode;
+import com.intellij.lang.FileASTNode;
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.model.ModelBranch;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationListener;
@@ -31,7 +33,6 @@ import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.codeStyle.ExternalFormatProcessor;
-import com.intellij.model.ModelBranch;
 import com.intellij.psi.impl.PsiDocumentManagerBase;
 import com.intellij.psi.impl.PsiManagerEx;
 import com.intellij.psi.impl.file.impl.FileManager;
@@ -41,6 +42,7 @@ import com.intellij.psi.impl.source.codeStyle.CodeStyleManagerImpl;
 import com.intellij.psi.impl.source.codeStyle.IndentHelperImpl;
 import com.intellij.psi.impl.source.tree.*;
 import com.intellij.util.Function;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.MultiMap;
@@ -218,12 +220,12 @@ public final class PostprocessReformattingAspect implements PomModelAspect {
 
   private static boolean leavesEmptyRangeAtEdge(TreeChangeImpl treeChange, ASTNode child) {
     ChangeInfoImpl info = treeChange.getChangeByChild(child);
-    TreeElement newChild = info.getNewChild();
-    return (newChild == null || newChild.getTextLength() == 0) && wasEdgeChild(treeChange, info.getOldChild());
+    ASTNode newChild = info.getNewChild();
+    return (newChild == null || newChild.getTextLength() == 0) && wasEdgeChild(treeChange, info.getOldChildNode());
   }
 
-  private static boolean wasEdgeChild(TreeChangeImpl treeChange, TreeElement oldChild) {
-    List<TreeElement> initial = treeChange.getInitialChildren();
+  private static boolean wasEdgeChild(TreeChangeImpl treeChange, ASTNode oldChild) {
+    List<ASTNode> initial = treeChange.getInitialChildren();
     return initial.size() > 0 && (oldChild == initial.get(0) || oldChild == initial.get(initial.size() - 1));
   }
 
@@ -634,8 +636,8 @@ public final class PostprocessReformattingAspect implements PomModelAspect {
     if (document == null) {
       return;
     }
-    for (final FileElement fileElement : ((AbstractFileViewProvider)key).getKnownTreeRoots()) {
-      fileElement.acceptTree(new RecursiveTreeElementWalkingVisitor() {
+    for (final FileASTNode fileElement : ((AbstractFileViewProvider)key).getKnownTreeRoots()) {
+      ((TreeElement) fileElement).acceptTree(new RecursiveTreeElementWalkingVisitor() {
         @Override
         protected void visitNode(TreeElement element) {
           if (CodeEditUtil.isMarkedToReformatBefore(element)) {
@@ -789,7 +791,7 @@ public final class PostprocessReformattingAspect implements PomModelAspect {
       }
       else {
         final CodeFormatterFacade codeFormatter = getFormatterFacade(viewProvider);
-        codeFormatter.processText(file, textRanges, false);
+        SlowOperations.allowSlowOperations(() -> codeFormatter.processText(file, textRanges, false));
       }
     }
 

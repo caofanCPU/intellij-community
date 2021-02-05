@@ -36,7 +36,7 @@ public class InstalledPluginsTableModel {
     myProject = project;
     myPluginTracker = myProject == null ?
                       null :
-                      ProjectPluginTrackerManager.getInstance().createPluginTracker(myProject);
+                      ProjectPluginTrackerManager.getInstance().getPluginTracker(myProject);
 
     ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
     for (IdeaPluginDescriptor plugin : PluginManagerCore.getPlugins()) {
@@ -60,10 +60,6 @@ public class InstalledPluginsTableModel {
     return myProject;
   }
 
-  protected final @Nullable ProjectPluginTracker getPluginTracker() {
-    return myPluginTracker;
-  }
-
   protected @NotNull List<IdeaPluginDescriptor> getAllPlugins() {
     return new ArrayList<>(view);
   }
@@ -80,7 +76,7 @@ public class InstalledPluginsTableModel {
   protected final void setEnabled(@NotNull IdeaPluginDescriptor ideaPluginDescriptor) {
     PluginId pluginId = ideaPluginDescriptor.getPluginId();
 
-    PluginEnabledState enabled = (myPluginTracker != null && myPluginTracker.isEnabled(pluginId)) ?
+    PluginEnabledState enabled = myPluginTracker != null && myPluginTracker.isEnabled(pluginId) ?
                                  PluginEnabledState.ENABLED_FOR_PROJECT :
                                  myPluginTracker != null && myPluginTracker.isDisabled(pluginId) ?
                                  PluginEnabledState.DISABLED_FOR_PROJECT :
@@ -174,11 +170,9 @@ public class InstalledPluginsTableModel {
 
     if (!dependencies.isEmpty() &&
         !SystemProperties.getBooleanProperty("startup.performance.framework", false) &&
-        !createUpdateDependenciesDialog(
-          enabled,
-          ideaPluginDescriptors.size(),
-          ContainerUtil.map(dependencies, pair -> pair.getSecond())
-        ).ask(getProject())) {
+        !createUpdateDependenciesDialog(action,
+                                        ContainerUtil.map(dependencies, pair -> pair.getSecond()))
+          .ask(getProject())) {
       return;
     }
 
@@ -212,7 +206,7 @@ public class InstalledPluginsTableModel {
       PluginEnabledState oldState = enabledMap.get(pluginId);
 
       PluginEnabledState newState = oldState == null ?
-                                    null :
+                                    PluginEnabledState.DISABLED :
                                     action.apply(oldState);
       if (newState != null) {
         beforeHandler.accept(descriptor, Pair.create(action, newState));
@@ -289,29 +283,59 @@ public class InstalledPluginsTableModel {
     return dependencies;
   }
 
-  private static @NotNull OkCancelDialogBuilder createUpdateDependenciesDialog(boolean enabled,
-                                                                               int updatedDescriptorsCount,
+  private static @NotNull OkCancelDialogBuilder createUpdateDependenciesDialog(@NotNull PluginEnableDisableAction action,
                                                                                @NotNull List<String> dependencies) {
+    boolean hasOnlyOneDependency = dependencies.size() == 1;
 
-    String message;
-    if (updatedDescriptorsCount == 1 && dependencies.size() == 1) {
-      message = IdeBundle.message(enabled ? "dialog.message.enable.required.plugin" : "dialog.message.disable.dependent.plugin",
-                                  dependencies.get(0));
+    String key;
+    switch (action) {
+      case ENABLE_GLOBALLY:
+        key = hasOnlyOneDependency ?
+              "dialog.message.enable.required.plugin" :
+              "dialog.message.enable.required.plugins";
+        break;
+      case ENABLE_FOR_PROJECT:
+        key = hasOnlyOneDependency ?
+              "dialog.message.enable.required.plugin.for.current.project" :
+              "dialog.message.enable.required.plugins.for.current.project";
+        break;
+      case ENABLE_FOR_PROJECT_DISABLE_GLOBALLY:
+        key = hasOnlyOneDependency ?
+              "dialog.message.enable.dependent.plugin.for.current.project.only" :
+              "dialog.message.enable.dependent.plugins.for.current.project.only";
+        break;
+      case DISABLE_GLOBALLY:
+        key = hasOnlyOneDependency ?
+              "dialog.message.disable.dependent.plugin" :
+              "dialog.message.disable.dependent.plugins";
+        break;
+      case DISABLE_FOR_PROJECT:
+        key = hasOnlyOneDependency ?
+              "dialog.message.disable.dependent.plugin.for.current.project" :
+              "dialog.message.disable.dependent.plugins.for.current.project";
+        break;
+      case DISABLE_FOR_PROJECT_ENABLE_GLOBALLY:
+        key = hasOnlyOneDependency ?
+              "dialog.message.disable.required.plugin.for.current.project.only" :
+              "dialog.message.disable.required.plugins.for.current.project.only";
+        break;
+      default:
+        throw new IllegalStateException("Unexpected value: " + action);
     }
-    else {
-      message = IdeBundle.message(
-        enabled ? "dialog.message.enable.required.plugins" : "dialog.message.disable.dependent.plugins",
-        enabled ? updatedDescriptorsCount : dependencies.size(),
-        enabled ? dependencies.size() : updatedDescriptorsCount,
-        StringUtil.join(dependencies, id -> "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + id, "<br>")
-      );
-    }
-    return MessageDialogBuilder.okCancel(
-      IdeBundle.message(enabled ? "dialog.title.enable.required.plugins" : "dialog.title.disable.dependent.plugins"), message
-    ).yesText(IdeBundle.message(enabled ? "button.enable" : "button.disable"))
+
+    String dependenciesText = hasOnlyOneDependency ?
+                              dependencies.get(0) :
+                              StringUtil.join(dependencies,
+                                              StringUtil.repeat("&nbsp;", 5)::concat,
+                                              "<br>");
+
+    boolean enabled = action.isEnable();
+    return MessageDialogBuilder
+      .okCancel(IdeBundle.message(enabled ? "dialog.title.enable.required.plugins" : "dialog.title.disable.dependent.plugins"),
+                IdeBundle.message(key, dependenciesText))
+      .yesText(IdeBundle.message(enabled ? "button.enable" : "button.disable"))
       .noText(Messages.getCancelButton());
   }
-
   protected void handleBeforeChangeEnableState(@NotNull IdeaPluginDescriptor descriptor,
                                                @NotNull Pair<PluginEnableDisableAction, PluginEnabledState> pair) {
   }

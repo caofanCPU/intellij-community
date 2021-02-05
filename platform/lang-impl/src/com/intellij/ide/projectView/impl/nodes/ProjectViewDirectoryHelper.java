@@ -52,15 +52,6 @@ public class ProjectViewDirectoryHelper {
     myIndex = DirectoryIndex.getInstance(project);
   }
 
-  /**
-   * @deprecated use {@link ProjectViewDirectoryHelper(Project)}
-   */
-  @Deprecated
-  public ProjectViewDirectoryHelper(Project project, DirectoryIndex index) {
-    myProject = project;
-    myIndex = index;
-  }
-
   public Project getProject() {
     return myProject;
   }
@@ -302,7 +293,7 @@ public class ProjectViewDirectoryHelper {
     final VirtualFile dir = psiDirectory.getVirtualFile();
     if (shouldBeShown(dir, settings)) {
       final List<PsiElement> children = new ArrayList<>();
-      psiDirectory.processChildren(new PsiElementProcessor<PsiFileSystemItem>() {
+      psiDirectory.processChildren(new PsiElementProcessor<>() {
         @Override
         public boolean execute(@NotNull PsiFileSystemItem element) {
           if (shouldBeShown(element.getVirtualFile(), settings)) {

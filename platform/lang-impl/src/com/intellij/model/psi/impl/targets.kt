@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.model.psi.impl
 
 import com.intellij.codeInsight.TargetElementUtil
@@ -22,8 +22,8 @@ import org.jetbrains.annotations.ApiStatus.Experimental
 @Experimental
 fun targetSymbols(file: PsiFile, offset: Int): Collection<Symbol> {
   val (declaredData, referencedData) = declaredReferencedData(file, offset)
-  val data = declaredData
-             ?: referencedData
+  val data = referencedData
+             ?: declaredData
              ?: return emptyList()
   return data.targets.map { it.symbol }
 }
@@ -45,7 +45,9 @@ internal fun declaredReferencedData(file: PsiFile, offset: Int): DeclaredReferen
     return emptyData
   }
 
-  val withMinimalRanges: Collection<DeclarationOrReference> = chooseByRange(allDeclarationsOrReferences, offset, DeclarationOrReference::rangeWithOffset)
+  val withMinimalRanges: Collection<DeclarationOrReference> = chooseByRange(
+    allDeclarationsOrReferences, offset, DeclarationOrReference::rangeWithOffset
+  )
 
   var declaration: PsiSymbolDeclaration? = null
   val references: MutableList<PsiSymbolReference> = ArrayList()

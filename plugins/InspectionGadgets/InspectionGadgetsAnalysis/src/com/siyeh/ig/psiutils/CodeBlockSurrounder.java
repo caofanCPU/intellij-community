@@ -132,8 +132,12 @@ public abstract class CodeBlockSurrounder {
    * @return the expression that replaced the original expression
    */
   public @NotNull CodeBlockSurrounder.SurroundResult surround() {
-    Object marker = new Object();
-    PsiTreeUtil.mark(myExpression, marker);
+    Object marker = ObjectUtils.sentinel("CodeBlockSurrounder.MARKER");
+    PsiExpression expr = PsiUtil.skipParenthesizedExprDown(myExpression);
+    if (expr == null) {
+      expr = myExpression;
+    }
+    PsiTreeUtil.mark(expr, marker);
     Project project = myExpression.getProject();
     PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
     boolean physical = myExpression.isPhysical();
@@ -277,7 +281,8 @@ public abstract class CodeBlockSurrounder {
 
   private static CodeBlockSurrounder forStatement(PsiStatement statement, PsiExpression expression) {
     PsiElement statementParent = statement.getParent();
-    if (statementParent instanceof PsiLabeledStatement || statementParent instanceof PsiForStatement) {
+    PsiForStatement forStatement = ObjectUtils.tryCast(statementParent, PsiForStatement.class);
+    if (statementParent instanceof PsiLabeledStatement || (forStatement != null && forStatement.getBody() != statement)) {
       statement = (PsiStatement)statementParent;
       statementParent = statement.getParent();
     }

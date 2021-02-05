@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.ui.search;
 
 import com.intellij.ide.plugins.DynamicPluginListener;
@@ -13,31 +13,36 @@ import com.intellij.openapi.options.ConfigurableGroup;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.util.text.Strings;
 import com.intellij.util.CollectConsumer;
+import com.intellij.util.ExceptionUtil;
 import com.intellij.util.ResourceUtil;
-import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.io.URLUtil;
+import kotlin.Pair;
+import org.jdom.Element;
+import org.jdom.JDOMException;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.event.DocumentEvent;
-import java.io.*;
-import java.net.URL;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 @SuppressWarnings("Duplicates")
 public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegistrar {
@@ -48,7 +53,7 @@ public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegis
 
   private final Set<String> stopWords;
 
-  private volatile @NotNull Map<kotlin.Pair<String, String>, Set<String>> highlightOptionToSynonym = Collections.emptyMap();
+  private volatile @NotNull Map<Pair<String, String>, Set<String>> highlightOptionToSynonym = Collections.emptyMap();
 
   private final AtomicBoolean isInitialized = new AtomicBoolean();
 
@@ -120,72 +125,69 @@ public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegis
       return;
     }
 
-    CompletableFuture<Set<URL>> searchableOptionFileUrlsFuture = CompletableFuture.supplyAsync(() -> {
-      try {
-        // index
-        Set<URL> searchableOptions = findSearchableOptions();
-        if (searchableOptions.isEmpty()) {
-          LOG.info("No /search/searchableOptions.xml found, settings search won't work!");
-          return null;
-        }
-        return searchableOptions;
-      }
-      catch (Exception e) {
-        LOG.error(e);
-        return null;
-      }
-    }, AppExecutorUtil.getAppExecutorService());
-
     MySearchableOptionProcessor processor = new MySearchableOptionProcessor(stopWords);
     EP_NAME.forEachExtensionSafe(contributor -> contributor.processOptions(processor));
 
     // index
-    Set<URL> searchableOptions = searchableOptionFileUrlsFuture.join();
-    highlightOptionToSynonym = searchableOptions == null ? Collections.emptyMap() : processor.computeHighlightOptionToSynonym(searchableOptions);
+    highlightOptionToSynonym = processor.computeHighlightOptionToSynonym();
 
     storage = processor.getStorage();
     identifierTable = processor.getIdentifierTable();
   }
 
-  private static @NotNull Set<URL> findSearchableOptions() throws IOException {
-    Set<URL> urls = new HashSet<>();
+  static void processSearchableOptions(@NotNull Predicate<? super String> fileNameFilter, @NotNull BiConsumer<? super String, ? super Element> consumer) {
     Set<ClassLoader> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+    MethodType methodType = MethodType.methodType(void.class, String.class, Predicate.class, BiConsumer.class);
+    MethodHandles.Lookup lookup = MethodHandles.lookup();
+
+    Map<Class<?>, MethodHandle> handleCache = new HashMap<>();
+
     for (IdeaPluginDescriptor plugin : PluginManagerCore.getLoadedPlugins()) {
       ClassLoader classLoader = plugin.getPluginClassLoader();
       if (!visited.add(classLoader)) {
         continue;
       }
 
-      Enumeration<URL> resources = classLoader.getResources("search");
-      while (resources.hasMoreElements()) {
-        URL url = resources.nextElement();
-        if (URLUtil.JAR_PROTOCOL.equals(url.getProtocol())) {
-          Pair<String, String> parts = Objects.requireNonNull(URLUtil.splitJarUrl(url.getFile()));
-          File file = new File(parts.first);
-          try (ZipFile jar = new ZipFile(file)) {
-            Enumeration<? extends ZipEntry> entries = jar.entries();
-            while (entries.hasMoreElements()) {
-              String name = entries.nextElement().getName();
-              if (name.startsWith("search/") && name.endsWith(SEARCHABLE_OPTIONS_XML) && StringUtil.countChars(name, '/') == 1) {
-                urls.add(URLUtil.getJarEntryURL(file, name));
-              }
-            }
+      MethodHandle methodHandle;
+      Class<?> loaderClass = classLoader.getClass();
+      if (loaderClass.isAnonymousClass() || loaderClass.isMemberClass()) {
+        loaderClass = loaderClass.getSuperclass();
+      }
+
+      try {
+        methodHandle = handleCache.computeIfAbsent(loaderClass, aClass -> {
+          try {
+            return lookup.findVirtual(aClass, "processResources", methodType);
           }
+          catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+          }
+        });
+      }
+      catch (RuntimeException e) {
+        if (e.getCause() instanceof NoSuchMethodException) {
+          LOG.error(loaderClass + " is not supported", e);
         }
         else {
-          try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get(url.getPath()))) {
-            for (Path xml : paths) {
-              if (xml.getFileName().toString().endsWith(SEARCHABLE_OPTIONS_XML) && Files.isRegularFile(xml)) {
-                urls.add(xml.toUri().toURL());
-              }
-            }
-          }
-          catch (NotDirectoryException ignore) {
-          }
+          LOG.error(e);
         }
+        continue;
+      }
+
+      try {
+        methodHandle.invoke(classLoader, "search", fileNameFilter, (BiConsumer<String, InputStream>)(name, stream) -> {
+          try {
+            consumer.accept(name, JDOMUtil.load(stream));
+          }
+          catch (IOException | JDOMException e) {
+            throw new RuntimeException(e);
+          }
+        });
+      }
+      catch (Throwable throwable) {
+        ExceptionUtil.rethrow(throwable);
       }
     }
-    return urls;
   }
 
   /**
@@ -449,7 +451,7 @@ public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegis
   }
 
   @ApiStatus.Internal
-  public static void collectProcessedWordsWithoutStemming(@NotNull String text, @NotNull Set<String> result, @NotNull Set<String> stopWords) {
+  public static void collectProcessedWordsWithoutStemming(@NotNull String text, @NotNull Set<? super String> result, @NotNull Set<String> stopWords) {
     for (String opt : REG_EXP.split(Strings.toLowerCase(text))) {
       if (stopWords.contains(opt)) {
         continue;
@@ -471,7 +473,7 @@ public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegis
     return result;
   }
 
-  static void collectProcessedWords(@NotNull String text, @NotNull Set<String> result, @NotNull Set<String> stopWords) {
+  static void collectProcessedWords(@NotNull String text, @NotNull Set<? super String> result, @NotNull Set<String> stopWords) {
     String toLowerCase = StringUtil.toLowerCase(text);
     final String[] options = REG_EXP.split(toLowerCase);
     for (String opt : options) {
@@ -495,7 +497,7 @@ public final class SearchableOptionsRegistrarImpl extends SearchableOptionsRegis
     Set<String> result = new HashSet<>(options);
     initialize();
     for (String option : options) {
-      Set<String> synonyms = highlightOptionToSynonym.get(new kotlin.Pair<>(option, configurable.getId()));
+      Set<String> synonyms = highlightOptionToSynonym.get(new Pair<>(option, configurable.getId()));
       if (synonyms != null) {
         result.addAll(synonyms);
       }

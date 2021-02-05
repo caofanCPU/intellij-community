@@ -9,7 +9,7 @@
       <keyboard-shortcut first-keystroke="control K" keymap="$default"/>
       <add-to-group group-id="SegmentedVcsActionsBarGroup" anchor="first"/>
     </action>
-    <action id="ChangesView.ToggleCommitUi" class="com.intellij.vcs.commit.ToggleChangesViewCommitUiAction" use-shortcut-of="CheckinProject">
+    <action id="ChangesView.ToggleCommitUi" class="com.intellij.openapi.vcs.actions.ToggleChangesViewCommitUiAction" use-shortcut-of="CheckinProject">
       <add-to-group group-id="SegmentedVcsActionsBarGroup" anchor="first"/>
     </action>
     <action id="CheckinFiles" class="com.intellij.openapi.vcs.actions.CommonCheckinFilesAction"/>
@@ -117,6 +117,7 @@
 
     <action id="ChangesView.Revert" class="com.intellij.openapi.vcs.changes.actions.RollbackAction"
             icon="AllIcons.Actions.Rollback"/>
+    <action id="ChangesView.RevertFiles" class="com.intellij.openapi.vcs.changes.actions.RollbackFilesAction"/>
 
     <group id="ChangesView.ViewOptions"/>
 
@@ -151,10 +152,12 @@
         <keyboard-shortcut first-keystroke="shift control H" keymap="$default"/>
       </action>
     </group>
+    <action id="ChangesView.SaveToShelve" class="com.intellij.openapi.vcs.changes.actions.SaveToShelveAction"/>
 
     <group id="ChangesViewPopupMenu">
       <reference ref="CheckinFiles"/>
       <reference ref="ChangesView.Revert"/>
+      <reference ref="ChangesView.RevertFiles"/>
       <reference ref="ChangesView.Move"/>
       <reference ref="Diff.ShowDiff"/>
       <reference ref="EditSource"/>
@@ -374,6 +377,18 @@
     <action id="Vcs.Diff.IncludeOnlyChangedLinesIntoCommit" class="com.intellij.openapi.actionSystem.EmptyAction">
       <add-to-group group-id="Diff.KeymapGroup" relative-to-action="Vcs.Diff.ExcludeChangedLinesFromCommit" anchor="after"/>
     </action>
+    <action id="Vcs.Diff.ShowDiffInEditorTab" class="com.intellij.openapi.vcs.changes.actions.diff.MoveDiffPreviewToEditorAction">
+      <add-to-group group-id="Diff.EditorGutterPopupMenu.EditorSettings" anchor="last"/>
+    </action>
+    <group>
+      <action id="Vcs.Diff.ShowDiffInNewWindow"
+              icon="AllIcons.Actions.MoveToWindow"
+              class="com.intellij.openapi.vcs.changes.actions.diff.MoveDiffPreviewToNewWindowAction">
+      </action>
+      <separator/>
+      <add-to-group group-id="EditorTabPopupMenu" anchor="before" relative-to-action="SplitVertically"/>
+      <add-to-group group-id="Diff.EditorGutterPopupMenu.EditorSettings" anchor="last"/>
+    </group>
 
     <reference ref="Vcs.VcsClone">
       <add-to-group group-id="WelcomeScreen.QuickStart" anchor="first"/>
@@ -389,9 +404,10 @@
       <reference id="Vcs.CopyRevisionNumberAction"/>
     </group>
 
-    <group id="Shelve.KeymapGroup">
+    <group id="Shelve.KeymapGroup" searchable="false">
       <reference ref="ChangesView.Shelve"/>
       <reference ref="ChangesView.ShelveSilently"/>
+      <reference ref="ChangesView.SaveToShelve"/>
       <reference ref="ShelveChanges.UnshelveWithDialog"/>
       <reference ref="ChangesView.UnshelveSilently"/>
       <reference ref="ShelvedChanges.Restore"/>
@@ -409,7 +425,7 @@
       <add-to-group group-id="Vcs.KeymapGroup" anchor="first"/>
     </group>
 
-    <group id="FileHistory.KeymapGroup">
+    <group id="FileHistory.KeymapGroup" searchable="false">
       <reference id="Vcs.GetVersion"/>
       <reference id="FileHistory.AnnotateRevision"/>
 
@@ -451,6 +467,7 @@
       <reference ref="ChangesView.ApplyPatch"/>
       <reference ref="ChangesView.ApplyPatchFromClipboard"/>
       <reference ref="ChangesView.Revert"/>
+      <reference ref="ChangesView.RevertFiles"/>
       <reference ref="ChangesView.Refresh"/>
       <reference ref="ChangesView.NewChangeList"/>
       <reference ref="ChangesView.RemoveChangeList"/>
@@ -499,8 +516,16 @@
 
     <group id="CommitView.GearActions">
       <action id="CommitView.SwitchToCommitDialog" class="com.intellij.vcs.commit.SwitchToCommitDialogAction"/>
-      <action id="CommitView.ShowEditorPreviewOnDoubleClick"
-              class="com.intellij.openapi.vcs.changes.actions.ShowEditorPreviewOnDoubleClickToggleAction"/>
+      <group id="CommitView.ShowOnDoubleClick" popup="true" searchable="false">
+        <action id="CommitView.ShowOnDoubleClick.EditorPreview"
+                class="com.intellij.openapi.vcs.changes.actions.ShowOnDoubleClickToggleAction$EditorPreview">
+          <override-text place="ToolwindowPopup"/>
+        </action>
+        <action id="CommitView.ShowOnDoubleClick.Source"
+                class="com.intellij.openapi.vcs.changes.actions.ShowOnDoubleClickToggleAction$Source">
+          <override-text place="ToolwindowPopup"/>
+        </action>
+      </group>
 
       <add-to-group group-id="VcsGeneral.KeymapGroup"/>
     </group>

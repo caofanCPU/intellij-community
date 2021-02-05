@@ -1,22 +1,15 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.xdebugger.impl.ui.tree.nodes;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.Inlay;
-import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColoredTextContainer;
-import com.intellij.ui.SimpleColoredText;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.util.ThreeState;
 import com.intellij.xdebugger.XDebugSession;
@@ -24,15 +17,10 @@ import com.intellij.xdebugger.XDebuggerBundle;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.frame.presentation.XValuePresentation;
-import com.intellij.xdebugger.impl.XDebugSessionImpl;
-import com.intellij.xdebugger.impl.inline.XDebuggerInlayUtil;
-import com.intellij.xdebugger.impl.inline.XDebuggerTreeInlayPopup;
-import com.intellij.xdebugger.impl.evaluate.XDebuggerEditorLinePainter;
-import com.intellij.xdebugger.impl.evaluate.quick.XDebuggerTreeCreator;
 import com.intellij.xdebugger.impl.frame.XDebugView;
 import com.intellij.xdebugger.impl.frame.XValueMarkers;
-import com.intellij.xdebugger.impl.frame.XValueWithInlinePresentation;
 import com.intellij.xdebugger.impl.frame.XVariablesView;
+import com.intellij.xdebugger.impl.inline.XDebuggerInlayUtil;
 import com.intellij.xdebugger.impl.pinned.items.PinToTopUtilKt;
 import com.intellij.xdebugger.impl.pinned.items.actions.XDebuggerPinToTopAction;
 import com.intellij.xdebugger.impl.ui.DebuggerUIUtil;
@@ -45,10 +33,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.awt.*;
 import java.awt.event.MouseEvent;
 import java.util.Comparator;
-import java.util.function.Consumer;
 
 public class XValueNodeImpl extends XValueContainerNode<XValue> implements XValueNode, XCompositeNode, XValueNodePresentationConfigurator.ConfigurableXValueNode, RestorableStateNode {
   public static final Comparator<XValueNodeImpl> COMPARATOR = (o1, o2) -> StringUtil.naturalCompare(o1.getName(), o2.getName());
@@ -144,7 +130,7 @@ public class XValueNodeImpl extends XValueContainerNode<XValue> implements XValu
               return;
             }
 
-            if (!showAsInlay(session, position, debuggerPosition, document)) {
+            if (!showAsInlay(session, position, document)) {
               data.put(file, position, XValueNodeImpl.this, document.getModificationStamp());
 
               myTree.updateEditor();
@@ -161,36 +147,12 @@ public class XValueNodeImpl extends XValueContainerNode<XValue> implements XValu
     }
   }
 
-  private boolean showAsInlay(XDebugSession session,
-                              XSourcePosition position,
-                              XSourcePosition debuggerPosition,
-                              Document document) {
-    if (!Registry.is("debugger.show.values.between.lines")
-        && !Registry.is("debugger.show.values.inplace")
-        && !Registry.is("debugger.show.values.use.inlays")
-    ) return false;
-
-    if (Registry.is("debugger.show.values.between.lines") && session instanceof XDebugSessionImpl) {
-      if (XDebuggerInlayUtil.showValueInBlockInlay((XDebugSessionImpl)session, this, position)) {
-        return true;
-      }
-    }
-    if (Registry.is("debugger.show.values.inplace")) {
-      XValue container = getValueContainer();
-      if (debuggerPosition.getLine() == position.getLine() && container instanceof XValueWithInlinePresentation) {
-        String presentation = ((XValueWithInlinePresentation)container).computeInlinePresentation();
-        if (presentation != null) {
-          XDebuggerInlayUtil.createInlay(myTree.getProject(), position.getFile(), position.getOffset(), presentation);
-          return true;
-        }
-      }
-    }
+  private boolean showAsInlay(XDebugSession session, XSourcePosition position, Document document) {
     if (Registry.is("debugger.show.values.use.inlays")) {
       if (position.getLine() >= 0 && XDebuggerInlayUtil.createLineEndInlay(this, session, position.getFile(), position, document)) {
         return true;
       }
     }
-
 
     return false;
   }

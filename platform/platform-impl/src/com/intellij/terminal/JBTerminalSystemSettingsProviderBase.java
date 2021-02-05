@@ -97,6 +97,12 @@ public class JBTerminalSystemSettingsProviderBase extends DefaultTabbedSettingsP
   }
 
   @Override
+  public @NotNull TerminalActionPresentation getSelectAllActionPresentation() {
+    List<KeyStroke> strokes = getKeyStrokesByActionId("Terminal.SelectAll");
+    return new TerminalActionPresentation(UIUtil.removeMnemonic(ActionsBundle.message("action.$SelectAll.text")), strokes);
+  }
+
+  @Override
   public @NotNull TerminalActionPresentation getClearBufferActionPresentation() {
     List<KeyStroke> strokes = getKeyStrokesByActionId("Terminal.ClearBuffer");
     if (strokes.isEmpty()) {
@@ -496,8 +502,8 @@ public class JBTerminalSystemSettingsProviderBase extends DefaultTabbedSettingsP
 
   @Override
   public TextStyle getDefaultStyle() {
-    return new TextStyle(TerminalColor.index(JBTerminalSchemeColorPalette.getDefaultForegroundIndex()),
-                         TerminalColor.index(JBTerminalSchemeColorPalette.getDefaultBackgroundIndex()));
+    return new TextStyle(new TerminalColor(() -> myColorsScheme.getDefaultForeground()),
+                         new TerminalColor(() -> myColorsScheme.getDefaultBackground()));
   }
 
   @Override

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.diagnostic;
 
 import com.intellij.openapi.application.ApplicationNamesInfo;
@@ -8,7 +8,7 @@ import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.system.CpuArch;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -124,13 +124,13 @@ public final class VMOptions {
       if (!StringUtil.isEmptyOrSpaces(content)) {
         Matcher m = pattern.matcher(content);
         if (m.find()) {
-          StringBuffer b = new StringBuffer();
+          StringBuilder b = new StringBuilder();
           m.appendReplacement(b, Matcher.quoteReplacement(value));
           m.appendTail(b);
           content = b.toString();
         }
         else if (!StringUtil.isEmptyOrSpaces(value)) {
-          content = StringUtil.trimTrailing(content) + SystemProperties.getLineSeparator() + value;
+          content = StringUtil.trimTrailing(content) + System.lineSeparator() + value;
         }
       }
       else {
@@ -215,7 +215,7 @@ public final class VMOptions {
   @NotNull
   public static String getCustomVMOptionsFileName() {
     String fileName = ApplicationNamesInfo.getInstance().getScriptName();
-    if (SystemInfo.is64Bit && !SystemInfo.isMac) fileName += "64";
+    if (!SystemInfo.isMac && CpuArch.isIntel64()) fileName += "64";
     if (SystemInfo.isWindows) fileName += ".exe";
     fileName += ".vmoptions";
     return fileName;

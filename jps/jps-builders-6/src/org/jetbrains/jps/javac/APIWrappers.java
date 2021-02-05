@@ -4,11 +4,11 @@ package org.jetbrains.jps.javac;
 import com.intellij.openapi.util.Pair;
 import com.intellij.util.Function;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.Processor;
-import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.PackageElement;
@@ -24,13 +24,31 @@ import java.util.*;
 
 public class APIWrappers {
 
+  /**
+   * WARNING: this method may be called from annotation processor's code via reflection. The signature change or rename may break compatibility
+   *
+   * @param iface the interface the unwrapped object is expected to implement
+   * @param wrapper a possibly wrapped object to be unwrapped
+   * @return the object, the passed wrapper delegates to, if the wrapper object was wrapped with the help of {@link APIWrappers#wrap(Class, Object, Class, Object)}, null otherwise
+   */
+  @Nullable
+  public static <T> T unwrap(Class<? extends T> iface, T wrapper) {
+    if (wrapper instanceof WrapperDelegateAccessor) {
+      final Object delegate = ((WrapperDelegateAccessor)wrapper).getWrapperDelegate();
+      if (iface.isInstance(delegate)) {
+        return iface.cast(delegate);
+      }
+    }
+    return null;
+  }
+
   public static Processor newProcessorWrapper(final Processor delegate, JpsJavacFileManager fileManager) {
     return wrap(Processor.class, new ProcessorWrapper(delegate, fileManager));
   }
 
   @SuppressWarnings("unchecked")
-  public static <T> DiagnosticListener<T> newDiagnosticListenerWrapper(final DiagnosticListener<T> delegate, @NotNull Iterable<Processor> processors) {
-    return wrap(DiagnosticListener.class, new DiagnosticListenerWrapper<T>(delegate, processors), DynamicWrapper.class, delegate);
+  public static <T extends FileObject> DiagnosticOutputConsumer newDiagnosticListenerWrapper(final DiagnosticOutputConsumer delegate, @NotNull Iterable<Processor> processors) {
+    return wrap(DiagnosticOutputConsumer.class, new DiagnosticListenerWrapper<T>(delegate, processors));
   }
 
   public interface WrapperDelegateAccessor<T> {
@@ -52,10 +70,10 @@ public class APIWrappers {
   }
 
   @SuppressWarnings("unchecked")
-  static class DiagnosticListenerWrapper<T> extends DynamicWrapper<DiagnosticListener<T>> implements DiagnosticListener<T>{
+  static class DiagnosticListenerWrapper<T extends FileObject> extends DynamicWrapper<DiagnosticOutputConsumer> implements DiagnosticListener<T>{
     private final Iterable<Pair<String, String>> myNamesPairs;
 
-    DiagnosticListenerWrapper(DiagnosticListener<T> delegate, @NotNull Iterable<Processor> processors) {
+    DiagnosticListenerWrapper(DiagnosticOutputConsumer delegate, @NotNull Iterable<Processor> processors) {
       super(delegate);
       myNamesPairs = Iterators.filter(Iterators.map(processors, new Function<Processor, Pair<String, String>>() {
         @Override
@@ -65,9 +83,13 @@ public class APIWrappers {
       }), Iterators.<Pair<String, String>>notNullFilter());
     }
 
+    public void outputLineAvailable(String line) {
+      getWrapperDelegate().outputLineAvailable(DiagnosticWrapper.adjustMessage(myNamesPairs, line));
+    }
+
     @Override
     public void report(Diagnostic<? extends T> diagnostic) {
-      getWrapperDelegate().report(wrap(Diagnostic.class, new DiagnosticWrapper<T>((Diagnostic<T>)diagnostic, myNamesPairs), DynamicWrapper.class, diagnostic));
+      getWrapperDelegate().report(wrap(Diagnostic.class, new DiagnosticWrapper<T>((Diagnostic<T>)diagnostic, myNamesPairs)));
     }
   }
 
@@ -80,9 +102,13 @@ public class APIWrappers {
     }
 
     public String getMessage(Locale locale) {
-      final String message = getWrapperDelegate().getMessage(locale);
+      return adjustMessage(myNamesMap, getWrapperDelegate().getMessage(locale));
+    }
+
+    @Nullable
+    static String adjustMessage(final Iterable<Pair<String, String>> namesMap, String message) {
       if (message != null) {
-        for (Pair<String, String> pair : myNamesMap) {
+        for (Pair<String, String> pair : namesMap) {
           final String replaced = message.replace(pair.getFirst(), pair.getSecond());
           if (!message.equals(replaced)) {
             return replaced;
@@ -95,6 +121,7 @@ public class APIWrappers {
 
   static class ProcessorWrapper extends DynamicWrapper<Processor> {
     private final JpsJavacFileManager myFileManager;
+    private boolean myCodeShown = false;
 
     ProcessorWrapper(Processor delegate, JpsJavacFileManager fileManager) {
       super(delegate);
@@ -102,11 +129,27 @@ public class APIWrappers {
     }
 
     public void init(ProcessingEnvironment processingEnv) {
-      getWrapperDelegate().init(wrap(ProcessingEnvironment.class, new ProcessingEnvironmentWrapper(processingEnv, myFileManager)));
-    }
-
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-      return getWrapperDelegate().process(annotations, roundEnv);
+      try {
+        getWrapperDelegate().init(wrap(ProcessingEnvironment.class, new ProcessingEnvironmentWrapper(processingEnv, myFileManager)));
+      }
+      catch (IllegalArgumentException e) {
+        if (!myCodeShown) {
+          processingEnv.getMessager().printMessage(
+            Diagnostic.Kind.MANDATORY_WARNING,
+            "The " + e.getClass() + " may be caused by the wrapped ProcessingEnvironment object.\n" +
+            "Please pass the wrapped ProcessingEnvironment further to super.init().\n"+
+            "If you need to access the original ProcessingEnvironment object (e.g. for creating com.sun.source.util.Trees.instance(ProcessingEnvironment)), you may use following code in the processor implementation:\n\n" +
+            getUnwrapCodeSuggestion(ProcessingEnvironment.class, "processingEnv")
+          );
+          processingEnv.getMessager().printMessage(
+            Diagnostic.Kind.MANDATORY_WARNING,
+            "Workaround: to make project compile with the current annotation processor implementation, start JPS with VM option: -D"+JavacMain.TRACK_AP_GENERATED_DEPENDENCIES_PROPERTY + "=false\n" +
+            "When run from IDE, the option can be set in \"Compiler Settings | build process VM options\""
+          );
+          myCodeShown = true;
+        }
+        throw e;
+      }
     }
   }
 
@@ -197,14 +240,13 @@ public class APIWrappers {
   }
 
   @NotNull
-  private static <T, W extends DynamicWrapper<T>> T wrap(@NotNull Class<T> ifaceClass, @NotNull final W wrapper) {
+  private static <T, W extends DynamicWrapper<? extends T>> T wrap(@NotNull Class<T> ifaceClass, @NotNull final W wrapper) {
     return wrap(ifaceClass, wrapper, DynamicWrapper.class, wrapper.getWrapperDelegate());
   }
-  
+
   @NotNull
   public static <T> T wrap(@NotNull Class<T> ifaceClass, @NotNull final Object wrapper, @NotNull final Class<?> parentToStopSearchAt, @NotNull final T delegateTo) {
-    final Class<?>[] implemented = wrapper instanceof WrapperDelegateAccessor? new Class<?>[]{ifaceClass, WrapperDelegateAccessor.class} : new Class<?>[]{ifaceClass};
-    return ifaceClass.cast(Proxy.newProxyInstance(wrapper.getClass().getClassLoader(), implemented, new InvocationHandler() {
+    return ifaceClass.cast(Proxy.newProxyInstance(APIWrappers.class.getClassLoader(), new Class<?>[]{ifaceClass, WrapperDelegateAccessor.class}, new InvocationHandler() {
       private final Map<Method, Pair<Method, Object>> myCallHandlers = Collections.synchronizedMap(new HashMap<Method, Pair<Method, Object>>());
       @Override
       public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
@@ -223,7 +265,12 @@ public class APIWrappers {
         Pair<Method, Object> pair = myCallHandlers.get(method);
         if (pair == null) {
           if (WrapperDelegateAccessor.class.equals(method.getDeclaringClass())) {
-            pair = Pair.create(method, wrapper);
+            pair = wrapper instanceof WrapperDelegateAccessor? Pair.create(method, wrapper) : Pair.<Method, Object>create(method, new WrapperDelegateAccessor<T>() {
+              @Override
+              public T getWrapperDelegate() {
+                return delegateTo;
+              }
+            });
           }
           else {
             // important: look for implemented methods starting from the actual class
@@ -295,4 +342,18 @@ public class APIWrappers {
     }
   }
 
+  public static String getUnwrapCodeSuggestion(Class<?> ifaceClass, String objVarName) {
+    return ifaceClass.getSimpleName() + " unwrapped" + objVarName + " = " + "jbUnwrap(" + ifaceClass.getSimpleName() + ".class, " + objVarName + ");" +
+      "\n\n\t\twhere\n\n" +
+      "private static <T> T jbUnwrap(Class<? extends T> iface, T wrapper) {\n" +
+      "  T unwrapped = null;\n" +
+      "  try {\n" +
+      "    final Class<?> apiWrappers = wrapper.getClass().getClassLoader().loadClass(\"org.jetbrains.jps.javac.APIWrappers\");\n" +
+      "    final Method unwrapMethod = apiWrappers.getDeclaredMethod(\"unwrap\", Class.class, Object.class);\n" +
+      "    unwrapped = iface.cast(unwrapMethod.invoke(null, iface, wrapper));\n" +
+      "  }\n" +
+      "  catch (Throwable ignored) {}\n" +
+      "  return unwrapped != null? unwrapped : wrapper;\n" +
+      "}";
+  }
 }

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.application;
 
 import com.intellij.diagnostic.StartUpMeasurer;
@@ -10,9 +10,7 @@ import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.FList;
 import com.intellij.util.io.URLUtil;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,22 +36,23 @@ public final class PathManager {
   public static final String PROPERTY_LOG_CONFIG_FILE = "idea.log.config.file";
   public static final String PROPERTY_PATHS_SELECTOR = "idea.paths.selector";
 
-  public static final @NonNls String OPTIONS_DIRECTORY = "options";
+  public static final String OPTIONS_DIRECTORY = "options";
   public static final String DEFAULT_EXT = ".xml";
   public static final String DEFAULT_OPTIONS_FILE = "other" + DEFAULT_EXT;
 
   private static final String KOTLIN_IDE_IML_RELATIVE_PATH = "kotlin/idea/kotlin.idea.iml";
-  private static final @NonNls String KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH = "idea/kotlin.idea.iml";
-  private static final @NonNls String INTELLIJ_SUB_REPO_NAME = "intellij";
+  private static final String KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH = "idea/kotlin.idea.iml";
+  private static final String INTELLIJ_SUB_REPO_NAME = "intellij";
 
   private static final String PROPERTY_HOME = "idea.home";  // reduced variant of PROPERTY_HOME_PATH, now deprecated
   private static final String PROPERTY_VENDOR_NAME = "idea.vendor.name";
 
-  private static final @NonNls String LIB_DIRECTORY = "lib";
-  private static final @NonNls String PLUGINS_DIRECTORY = "plugins";
-  private static final @NonNls String BIN_DIRECTORY = "bin";
-  private static final @NonNls String LOG_DIRECTORY = "log";
-  private static final @NonNls String CONFIG_DIRECTORY = "config";
+  private static final String JRE_DIRECTORY = "jbr";
+  private static final String LIB_DIRECTORY = "lib";
+  private static final String PLUGINS_DIRECTORY = "plugins";
+  private static final String BIN_DIRECTORY = "bin";
+  private static final String LOG_DIRECTORY = "log";
+  private static final String CONFIG_DIRECTORY = "config";
   private static final String SYSTEM_DIRECTORY = "system";
   private static final String PATHS_SELECTOR = System.getProperty(PROPERTY_PATHS_SELECTOR);
 
@@ -181,7 +180,7 @@ public final class PathManager {
   private static List<Path> getBinDirectories(Path root) {
     List<Path> binDirs = new ArrayList<>();
 
-    @NonNls String[] subDirs = {BIN_DIRECTORY, "community/bin", "ultimate/community/bin"};
+    String[] subDirs = {BIN_DIRECTORY, "community/bin", "ultimate/community/bin"};
     String osSuffix = SystemInfoRt.isWindows ? "win" : SystemInfoRt.isMac ? "mac" : "linux";
 
     for (String subDir : subDirs) {
@@ -234,7 +233,7 @@ public final class PathManager {
       return file;
     }
 
-    @NonNls StringBuilder message = new StringBuilder();
+    StringBuilder message = new StringBuilder();
     message.append('\'').append(fileName).append("' not found in directories:");
     for (Path directory : getBinDirectories()) {
       message.append('\n').append(directory);
@@ -248,6 +247,10 @@ public final class PathManager {
 
   public static @NotNull String getPreInstalledPluginsPath() {
     return getHomePath() + '/' + PLUGINS_DIRECTORY;
+  }
+
+  public static @NotNull String getBundledRuntimePath() {
+    return getHomePath() + '/' + JRE_DIRECTORY;
   }
 
   // config paths
@@ -372,7 +375,7 @@ public final class PathManager {
     return getUnixPlatformPath(userHome, pathsSelector, null, ".cache", "");
   }
 
-  public static @NotNull @NonNls String getTempPath() {
+  public static @NotNull String getTempPath() {
     return getSystemPath() + "/tmp";
   }
 
@@ -419,9 +422,9 @@ public final class PathManager {
   /**
    * Attempts to detect classpath entry containing given resource.
    */
-  public static @Nullable String getResourceRoot(@NotNull ClassLoader cl, @NotNull String resourcePath) {
-    URL url = cl.getResource(resourcePath);
-    return url != null ? extractRoot(url, resourcePath) : null;
+  public static @Nullable String getResourceRoot(@NotNull ClassLoader classLoader, @NotNull String resourcePath) {
+    URL url = classLoader.getResource(resourcePath);
+    return url == null ? null : extractRoot(url, "/"+resourcePath);
   }
 
   /**
@@ -546,8 +549,7 @@ public final class PathManager {
             }
           }
         }
-        catch (NoSuchFileException | AccessDeniedException ignore) {
-        }
+        catch (NoSuchFileException | AccessDeniedException ignore) { }
         catch (IOException e) {
           log("Can't read property file '" + path + "': " + e.getMessage());
         }
@@ -614,7 +616,7 @@ public final class PathManager {
   /**
    * @return path to 'community' project home irrespective of current project
    */
-  public static @NotNull @NonNls String getCommunityHomePath() {
+  public static @NotNull String getCommunityHomePath() {
     String path = getHomePath();
     if (Files.isDirectory(Paths.get(path, "community/.idea"))) {
       return path + "/community";
@@ -683,22 +685,22 @@ public final class PathManager {
     Set<String> classPath = new HashSet<>();
 
     @SuppressWarnings("UnnecessaryFullyQualifiedName") Class<?>[] classes = {
-      PathManager.class,                               // module 'intellij.platform.util'
-      Strings.class,                                   // module 'intellij.platform.util.strings'
-      FList.class,                                     // module 'intellij.platform.util.collections'
-      MinusculeMatcher.class,                          // module 'intellij.platform.util.text.matching'
-      StartUpMeasurer.class,                           // module 'intellij.platform.util.diagnostic'
-      com.intellij.openapi.util.SystemInfoRt.class,    // module 'intellij.platform.util.rt'
-      com.intellij.util.lang.UrlClassLoader.class,     // module 'intellij.platform.util.classLoader'
-      org.intellij.lang.annotations.Flow.class,        // jetbrains-annotations-java5
-      org.jdom.Document.class,                         // jDOM
-      org.apache.log4j.Appender.class,                 // Log4J
-      gnu.trove.THashSet.class,                        // Trove
-      Object2IntMap.class,                             // fastutil
-      com.sun.jna.TypeMapper.class,                    // JNA
-      com.sun.jna.platform.FileUtils.class,            // JNA (jna-platform)
-      org.apache.oro.text.regex.PatternMatcher.class,  // OROMatcher
-      net.jpountz.lz4.LZ4Factory.class,                // LZ4-Java
+      PathManager.class,                                  // module 'intellij.platform.util'
+      Strings.class,                                      // module 'intellij.platform.util.strings'
+      FList.class,                                        // module 'intellij.platform.util.collections'
+      MinusculeMatcher.class,                             // module 'intellij.platform.util.text.matching'
+      StartUpMeasurer.class,                              // module 'intellij.platform.util.diagnostic'
+      com.intellij.openapi.util.SystemInfoRt.class,       // module 'intellij.platform.util.rt'
+      com.intellij.util.lang.UrlClassLoader.class,        // module 'intellij.platform.util.classLoader'
+      org.intellij.lang.annotations.Flow.class,           // jetbrains-annotations-java5
+      org.jdom.Document.class,                            // jDOM
+      org.apache.log4j.Appender.class,                    // Log4J
+      gnu.trove.THashSet.class,                           // Trove
+      it.unimi.dsi.fastutil.objects.Object2IntMap.class,  // fastutil
+      com.sun.jna.TypeMapper.class,                       // JNA
+      com.sun.jna.platform.FileUtils.class,               // JNA (jna-platform)
+      org.apache.oro.text.regex.PatternMatcher.class,     // OROMatcher
+      net.jpountz.lz4.LZ4Factory.class,                   // LZ4-Java
     };
     for (Class<?> aClass : classes) {
       String path = getJarPathForClass(aClass);
@@ -718,7 +720,7 @@ public final class PathManager {
   // helpers
 
   @SuppressWarnings("UseOfSystemOutOrSystemErr")
-  private static void log(@NonNls String x) {
+  private static void log(String x) {
     System.err.println(x);
   }
 
@@ -734,21 +736,21 @@ public final class PathManager {
     return path != null ? getAbsolutePath(StringUtilRt.unquoteString(path, '"')) : null;
   }
 
-  private static String platformPath(@NonNls String selector,
-                                     @NonNls String macDir, @NonNls String macSub,
-                                     @NonNls String winVar, @NonNls String winSub,
-                                     @NonNls String xdgVar, @NonNls String xdgDfl, @NonNls String xdgSub) {
+  private static String platformPath(String selector,
+                                     String macDir, String macSub,
+                                     String winVar, String winSub,
+                                     String xdgVar, String xdgDfl, String xdgSub) {
     String userHome = SystemProperties.getUserHome(), vendorName = vendorName();
 
     if (SystemInfoRt.isMac) {
-      @NonNls String dir = userHome + "/Library/" + macDir + '/' + vendorName;
+      String dir = userHome + "/Library/" + macDir + '/' + vendorName;
       if (!selector.isEmpty()) dir = dir + '/' + selector;
       if (!macSub.isEmpty()) dir = dir + '/' + macSub;
       return dir;
     }
 
     if (SystemInfoRt.isWindows) {
-      @NonNls String dir = System.getenv(winVar);
+      String dir = System.getenv(winVar);
       if (dir == null || dir.isEmpty()) dir = userHome + "\\AppData\\" + (winVar.startsWith("LOCAL") ? "Local" : "Roaming");
       dir = dir + '\\' + vendorName;
       if (!selector.isEmpty()) dir = dir + '\\' + selector;
@@ -764,10 +766,10 @@ public final class PathManager {
   }
 
   @NotNull
-  private static String getUnixPlatformPath(String userHome, @NonNls String selector,
-                                            @NonNls String xdgVar,
-                                            @NonNls String xdgDfl,
-                                            @NonNls String xdgSub) {
+  private static String getUnixPlatformPath(String userHome, String selector,
+                                            String xdgVar,
+                                            String xdgDfl,
+                                            String xdgSub) {
     String dir = xdgVar != null ? System.getenv(xdgVar) : null;
     if (dir == null || dir.isEmpty()) dir = userHome + '/' + xdgDfl;
     dir = dir + '/' + vendorName();

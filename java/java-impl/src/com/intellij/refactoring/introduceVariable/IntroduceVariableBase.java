@@ -1,8 +1,9 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.introduceVariable;
 
 import com.intellij.codeInsight.CodeInsightUtil;
 import com.intellij.codeInsight.completion.JavaCompletionUtil;
+import com.intellij.codeInsight.daemon.impl.quickfix.AddNewArrayExpressionFix;
 import com.intellij.codeInsight.highlighting.HighlightManager;
 import com.intellij.codeInsight.lookup.LookupManager;
 import com.intellij.codeInsight.unwrap.ScopeHighlighter;
@@ -59,6 +60,7 @@ import com.intellij.refactoring.util.occurrences.ExpressionOccurrenceManager;
 import com.intellij.refactoring.util.occurrences.NotInSuperCallOccurrenceFilter;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.Processor;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.siyeh.ig.psiutils.CommentTracker;
@@ -691,7 +693,7 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
       
       @Override
       public void pass(final JavaReplaceChoice choice) {
-        if (choice == null || !tryIntroduceInplace(project, editor, choice, occurrenceManager, originalType)) {
+        if (choice == null || !SlowOperations.allowSlowOperations(() -> tryIntroduceInplace(project, editor, choice, occurrenceManager, originalType))) {
           CommandProcessor.getInstance().executeCommand(project, () -> introduce(choice), getRefactoringName(), null);
         }
       }
@@ -724,6 +726,11 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
           }
           JavaReplaceChoice finalChoice = settings.getReplaceChoice();
           PsiExpression[] selectedOccurrences = finalChoice.filter(occurrenceManager);
+          if (selectedOccurrences.length == 0) {
+            showErrorMessage(project, editor, JavaRefactoringBundle.message("introduce.variable.no.matching.occurrences"));
+            wasSucceed = false;
+            return;
+          }
           final PsiElement chosenAnchor = getAnchor(selectedOccurrences);
           if (chosenAnchor == null) {
             String text = file.getText();
@@ -828,7 +835,11 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
     if (anchorStatement == null) {
       PsiField field = PsiTreeUtil.getParentOfType(place, PsiField.class, true, PsiStatement.class);
       if (field != null && !(field instanceof PsiEnumConstant)) {
-        anchorStatement = field.getInitializer();
+        PsiExpression initializer = field.getInitializer();
+        // Could be also an annotation argument
+        if (PsiTreeUtil.isAncestor(initializer, place, false)) {
+          anchorStatement = initializer;
+        }
       }
     }
     return anchorStatement;
@@ -991,6 +1002,9 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
         if (!diamondResolveResult.getInferredTypes().isEmpty()) {
           PsiDiamondTypeUtil.expandTopLevelDiamondsInside(copyVariableInitializer);
         }
+      }
+      else if (copyVariableInitializer instanceof PsiArrayInitializerExpression) {
+        new AddNewArrayExpressionFix((PsiArrayInitializerExpression)copyVariableInitializer).doFix();
       }
     }
 
@@ -1258,14 +1272,17 @@ public abstract class IntroduceVariableBase extends IntroduceHandlerBase {
         }
       } else {
         occurrencesMap.put(JavaReplaceChoice.NO, Collections.singletonList(expr));
-        if (myHasWriteAccess && !myCantReplaceAllButWrite) {
+        boolean hasWrite = myHasWriteAccess && !myCantReplaceAllButWrite;
+        if (hasWrite && !myNonWrite.isEmpty()) {
           occurrencesMap.put(JavaReplaceChoice.NO_WRITE, myNonWrite);
         }
 
         if (myOccurrences.size() > 1 && !myCantReplaceAll) {
-          if (occurrencesMap.containsKey(JavaReplaceChoice.NO_WRITE)) {
+          if (hasWrite) {
             JavaReplaceChoice choice = new JavaReplaceChoice(
-              ReplaceChoice.ALL, JavaRefactoringBundle.message("replace.all.read.and.write"), false);
+              ReplaceChoice.ALL, 
+              myNonWrite.isEmpty() ? JavaRefactoringBundle.message("replace.all.occurrences.changes.semantics", myOccurrences.size()) 
+              : JavaRefactoringBundle.message("replace.all.read.and.write"), false);
             occurrencesMap.put(choice, myOccurrences);
           }
           else {

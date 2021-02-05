@@ -63,7 +63,7 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
     return !suppressors.isEmpty() && isSuppressedFor(element, suppressors);
   }
 
-  private boolean isSuppressedFor(@NotNull PsiElement element, Set<InspectionSuppressor> suppressors) {
+  private boolean isSuppressedFor(@NotNull PsiElement element, Set<? extends InspectionSuppressor> suppressors) {
     String toolId = getSuppressId();
     for (InspectionSuppressor suppressor : suppressors) {
       if (isSuppressed(toolId, suppressor, element)) {
@@ -75,7 +75,7 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
     return merger != null && isSuppressedForMerger(element, suppressors, merger);
   }
 
-  private static boolean isSuppressedForMerger(PsiElement element, Set<InspectionSuppressor> suppressors, InspectionElementsMerger merger) {
+  private static boolean isSuppressedForMerger(PsiElement element, Set<? extends InspectionSuppressor> suppressors, InspectionElementsMerger merger) {
     String[] suppressIds = merger.getSuppressIds();
     String[] sourceToolIds = suppressIds.length != 0 ? suppressIds : merger.getSourceToolNames();
     for (String sourceToolId : sourceToolIds) {
@@ -101,7 +101,7 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
     if (element == null) {
       return SuppressQuickFix.EMPTY_ARRAY;
     }
-    Set<SuppressQuickFix> fixes = new ObjectOpenCustomHashSet<>(new Hash.Strategy < SuppressQuickFix > () {
+    Set<SuppressQuickFix> fixes = new ObjectOpenCustomHashSet<>(new Hash.Strategy<>() {
       @Override
       public int hashCode(@Nullable SuppressQuickFix object) {
         if (object == null) {
@@ -428,7 +428,7 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
    *
    * @return serialization filter.
    */
-  @SuppressWarnings({"DeprecatedIsStillUsed"})
+  @SuppressWarnings("DeprecatedIsStillUsed")
   @Deprecated
   protected @Nullable SerializationFilter getSerializationFilter() {
     return XmlSerializer.getJdomSerializer().getDefaultSerializationFilter();
@@ -471,7 +471,8 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
       InputStream descriptionStream = null;
       final String fileName = getDescriptionFileName();
       if (fileName != null) {
-        descriptionStream = ResourceUtil.getResourceAsStream(getDescriptionContextClass(), "/inspectionDescriptions", fileName);
+        descriptionStream =
+          ResourceUtil.getResourceAsStream(getDescriptionContextClass().getClassLoader(), "inspectionDescriptions", fileName);
       }
       //noinspection HardCodedStringLiteral(IDEA-249976)
       return descriptionStream != null ? ResourceUtil.loadText(descriptionStream) : null;

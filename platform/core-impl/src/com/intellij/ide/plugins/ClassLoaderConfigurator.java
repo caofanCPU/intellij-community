@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins;
 
 import com.intellij.diagnostic.PluginException;
@@ -21,8 +21,6 @@ import java.io.IOException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -73,7 +71,6 @@ final class ClassLoaderConfigurator {
         PluginId.getId("org.jetbrains.plugins.ruby"),
         PluginId.getId("com.jetbrains.rubymine.customization"),
         PluginId.getId("JavaScript"),
-        PluginId.getId("com.jetbrains.space"),
         PluginId.getId("Docker"),
         PluginId.getId("com.intellij.diagram"),
         PluginId.getId("org.jetbrains.plugins.github")
@@ -104,6 +101,7 @@ final class ClassLoaderConfigurator {
       PluginId.getId("com.intellij.spring.data"),
       PluginId.getId("com.intellij.spring.boot.run.tests"),
       PluginId.getId("com.intellij.spring.boot"),
+      PluginId.getId("com.jetbrains.space"),
       PluginId.getId("com.intellij.spring"),
     });
   }
@@ -263,7 +261,8 @@ final class ClassLoaderConfigurator {
                                                                     @NotNull UrlClassLoader.Builder urlClassLoaderBuilder,
                                                                     @NotNull ClassLoader coreLoader,
                                                                     @Nullable ClassPath.ResourceFileFactory resourceFileFactory) {
-    if (descriptor.id.getIdString().equals("com.intellij.properties")) {
+    String idString = descriptor.id.getIdString();
+    if (idString.equals("com.intellij.properties")) {
       // todo ability to customize (cannot move due to backward compatibility)
       return new PluginClassLoader(urlClassLoaderBuilder, parentLoaders,
                                    descriptor, descriptor.getPluginPath(), coreLoader, descriptor.packagePrefix, resourceFileFactory) {
@@ -274,8 +273,17 @@ final class ClassLoaderConfigurator {
         }
       };
     }
-    else if (descriptor.id.getIdString().equals("com.intellij.kubernetes") &&
-             descriptor.descriptorPath == null &&
+    else if (descriptor.descriptorPath == null && idString.equals("com.intellij.diagram")) {
+      // multiple packages - intellij.diagram and intellij.diagram.impl modules
+      return createPluginClassLoaderWithExtraPackage(parentLoaders, descriptor, urlClassLoaderBuilder, coreLoader, resourceFileFactory,
+                                                     "com.intellij.diagram.");
+    }
+    else if (descriptor.descriptorPath == null && idString.equals("com.intellij.struts2")) {
+      // multiple packages - intellij.diagram and intellij.diagram.impl modules
+      return createPluginClassLoaderWithExtraPackage(parentLoaders, descriptor, urlClassLoaderBuilder, coreLoader, resourceFileFactory,
+                                                     "com.intellij.lang.ognl.");
+    }
+    else if (descriptor.descriptorPath == null && idString.equals("com.intellij.kubernetes") &&
              descriptor.dependenciesDescriptor != null /* old plugin version */) {
       // kubernetes uses project libraries - not yet clear how to deal with that, that's why here we don't use default implementation
       return new FilteringPluginClassLoader(urlClassLoaderBuilder, parentLoaders, descriptor,
@@ -300,13 +308,29 @@ final class ClassLoaderConfigurator {
     }
   }
 
+  private static @NotNull PluginClassLoader createPluginClassLoaderWithExtraPackage(@NotNull ClassLoader @NotNull [] parentLoaders,
+                                                                                    @NotNull IdeaPluginDescriptorImpl descriptor,
+                                                                                    @NotNull UrlClassLoader.Builder urlClassLoaderBuilder,
+                                                                                    @NotNull ClassLoader coreLoader,
+                                                                                    @Nullable ClassPath.ResourceFileFactory resourceFileFactory,
+                                                                                    @NotNull String customPackage) {
+    return new PluginClassLoader(urlClassLoaderBuilder, parentLoaders,
+                                 descriptor, descriptor.getPluginPath(), coreLoader, descriptor.packagePrefix, resourceFileFactory) {
+      @Override
+      protected boolean isDefinitelyAlienClass(@NotNull String name, @NotNull String packagePrefix) {
+        return super.isDefinitelyAlienClass(name, packagePrefix) &&
+               !name.startsWith(customPackage);
+      }
+    };
+  }
+
   private static final class ContentPredicateBasedPluginClassLoader extends PluginClassLoader {
-    private final Predicate<String> contentBasedPredicate;
+    private final @NotNull Predicate<? super String> contentBasedPredicate;
 
     private ContentPredicateBasedPluginClassLoader(@NotNull UrlClassLoader.Builder builder,
                                                    @NotNull ClassLoader @NotNull [] parentLoaders,
                                                    @NotNull IdeaPluginDescriptorImpl descriptor,
-                                                   @NotNull Predicate<String> contentBasedPredicate,
+                                                   @NotNull Predicate<? super String> contentBasedPredicate,
                                                    @NotNull ClassLoader coreLoader,
                                                    @Nullable ClassPath.ResourceFileFactory resourceFileFactory) {
       super(builder, parentLoaders, descriptor, descriptor.getPluginPath(), coreLoader, descriptor.packagePrefix, resourceFileFactory);
@@ -328,12 +352,12 @@ final class ClassLoaderConfigurator {
   }
 
   private static final class FilteringPluginClassLoader extends PluginClassLoader {
-    private @NotNull final Predicate<String> dependencyBasedPredicate;
+    private final @NotNull Predicate<? super String> dependencyBasedPredicate;
 
     private FilteringPluginClassLoader(@NotNull UrlClassLoader.Builder builder,
                                        @NotNull ClassLoader @NotNull [] parentLoaders,
                                        @NotNull IdeaPluginDescriptorImpl descriptor,
-                                       @NotNull Predicate<String> dependencyBasedPredicate,
+                                       @NotNull Predicate<? super String> dependencyBasedPredicate,
                                        @NotNull ClassLoader coreLoader,
                                        @Nullable ClassPath.ResourceFileFactory resourceFileFactory) {
       super(builder, parentLoaders, descriptor, descriptor.getPluginPath(), coreLoader, descriptor.packagePrefix, resourceFileFactory);
@@ -405,15 +429,18 @@ final class ClassLoaderConfigurator {
     String pluginPackagePrefix = dependent.packagePrefix;
     if (pluginPackagePrefix == null) {
       if (parentDescriptor.packagePrefix != null) {
-        throw new PluginException("Sub descriptor must specify package if it is specified for main plugin descriptor (descriptorFile=" + dependent.descriptorPath + ")",
-                                  parentDescriptor.id);
+        throw new PluginException("Sub descriptor must specify package if it is specified for main plugin descriptor " +
+                                  "(descriptorFile=" + dependent.descriptorPath + ")", parentDescriptor.id);
       }
     }
     else {
       if (pluginPackagePrefix.equals(parentDescriptor.packagePrefix)) {
         throw new PluginException("Sub descriptor must not specify the same package as main plugin descriptor", parentDescriptor.id);
       }
-      if (parentDescriptor.packagePrefix == null && !(parentDescriptor.id.getIdString().equals("Docker") || parentDescriptor.id.getIdString().equals("org.jetbrains.plugins.ruby"))) {
+      if (parentDescriptor.packagePrefix == null &&
+          !(parentDescriptor.id.getIdString().equals("Docker") ||
+            parentDescriptor.id.getIdString().equals("org.jetbrains.plugins.ruby") ||
+            parentDescriptor.id.getIdString().equals("JavaScript"))) {
         throw new PluginException("Sub descriptor must not specify package if one is not specified for main plugin descriptor",
                                   parentDescriptor.id);
       }
@@ -589,30 +616,23 @@ final class ClassLoaderConfigurator {
     }
   }
 
-  private @NotNull static ClassLoader configureUsingIdeaClassloader(@NotNull List<Path> classPath, @NotNull IdeaPluginDescriptorImpl descriptor) {
+  private @NotNull static ClassLoader configureUsingIdeaClassloader(@NotNull List<? extends Path> classPath, @NotNull IdeaPluginDescriptorImpl descriptor) {
     getLogger().warn(descriptor.getPluginId() + " uses deprecated `use-idea-classloader` attribute");
     ClassLoader loader = ClassLoaderConfigurator.class.getClassLoader();
     try {
-      Class<?> loaderClass = loader.getClass();
-      if (loaderClass.getName().endsWith(".BootstrapClassLoaderUtil$TransformingLoader")) {
-        loaderClass = loaderClass.getSuperclass();
-      }
-
-      // `UrlClassLoader#addURL` can't be invoked directly, because the core classloader is created at bootstrap in a "lost" branch
-      MethodHandle addURL = MethodHandles.lookup().findVirtual(loaderClass, "addURL", MethodType.methodType(void.class, URL.class));
-      for (Path pathElement : classPath) {
-        addURL.invoke(loader, localFileToUrl(pathElement, descriptor));
-      }
+      // `UrlClassLoader#addPath` can't be invoked directly, because the core classloader is created at bootstrap in a "lost" branch
+      MethodHandle addFiles = MethodHandles.lookup().findVirtual(loader.getClass(), "addFiles", MethodType.methodType(void.class, List.class));
+      addFiles.invoke(loader, classPath);
       return loader;
     }
-    catch (Throwable t) {
-      throw new IllegalStateException("An unexpected core classloader: " + loader.getClass(), t);
+    catch (Throwable e) {
+      throw new IllegalStateException("An unexpected core classloader: " + loader, e);
     }
   }
 
   private void addLoaderOrLogError(@NotNull IdeaPluginDescriptorImpl dependent,
                                    @NotNull IdeaPluginDescriptorImpl dependency,
-                                   @NotNull Collection<ClassLoader> loaders) {
+                                   @NotNull Collection<? super ClassLoader> loaders) {
     ClassLoader loader = dependency.getClassLoader();
     if (loader == null) {
       getLogger().error(PluginLoadingError.formatErrorMessage(dependent,
@@ -632,16 +652,6 @@ final class ClassLoaderConfigurator {
           setPluginClassLoaderForMainAndSubPlugins(dependency.subDescriptor, classLoader);
         }
       }
-    }
-  }
-
-  private static @NotNull URL localFileToUrl(@NotNull Path file, @NotNull IdeaPluginDescriptor descriptor) {
-    try {
-      // it is important not to have traversal elements in classpath
-      return file.normalize().toUri().toURL();
-    }
-    catch (MalformedURLException e) {
-      throw new PluginException("Corrupted path element: `" + file + '`', e, descriptor.getPluginId());
     }
   }
 

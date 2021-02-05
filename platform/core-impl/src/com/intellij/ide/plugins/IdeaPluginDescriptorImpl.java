@@ -603,7 +603,7 @@ public final class IdeaPluginDescriptorImpl implements IdeaPluginDescriptor {
   @ApiStatus.Internal
   public void registerExtensions(@NotNull ExtensionsAreaImpl area,
                                  @NotNull ContainerDescriptor containerDescriptor,
-                                 @Nullable List<Runnable> listenerCallbacks) {
+                                 @Nullable List<? super Runnable> listenerCallbacks) {
     Map<String, List<Element>> extensions = containerDescriptor.extensions;
     if (extensions != null) {
       area.registerExtensions(extensions, this, listenerCallbacks);
@@ -728,6 +728,12 @@ public final class IdeaPluginDescriptorImpl implements IdeaPluginDescriptor {
   @Override
   public String getVendor() {
     return myVendor;
+  }
+
+  @Override
+  public String getOrganization() {
+    //TODO[ivan.chirkov]: support organizations for installed plugins
+    return "";
   }
 
   @Override

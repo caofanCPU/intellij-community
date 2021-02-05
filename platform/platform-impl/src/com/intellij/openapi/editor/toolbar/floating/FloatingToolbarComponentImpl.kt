@@ -5,61 +5,67 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionToolbar
-import com.intellij.openapi.actionSystem.DataProvider
 import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl
+import com.intellij.openapi.application.invokeLater
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBColor
+import org.jetbrains.annotations.ApiStatus
 import java.awt.*
 import javax.swing.BorderFactory
 import javax.swing.JComponent
 import javax.swing.JPanel
 
+@ApiStatus.Internal
 class FloatingToolbarComponentImpl(
   parentComponent: JComponent,
   contextComponent: JComponent,
   actionGroup: ActionGroup,
-  autoHideable: Boolean,
+  val autoHideable: Boolean,
   parentDisposable: Disposable
-) : JPanel(), FloatingToolbarComponent, DataProvider {
+) : JPanel(), FloatingToolbarComponent {
 
   private val actionToolbar: ActionToolbar
   private val visibilityController: VisibilityController
 
+  @Deprecated("see FloatingToolbarComponent#update")
   override fun update() = actionToolbar.updateActionsImmediately()
-  override fun scheduleShow() = visibilityController.scheduleShow()
-  override fun scheduleHide() = visibilityController.scheduleHide()
 
-  override fun getData(dataId: String): Any? {
-    if (FloatingToolbarComponent.KEY.`is`(dataId)) return this
-    return null
+  override fun scheduleShow() = invokeLater {
+    actionToolbar.updateActionsImmediately()
+    visibilityController.scheduleShow()
   }
 
-  override fun paintChildren(g: Graphics) {
-    val graphics = g.create() as Graphics2D
+  override fun scheduleHide() = invokeLater {
+    actionToolbar.updateActionsImmediately()
+    visibilityController.scheduleHide()
+  }
+
+  override fun paintComponent(g: Graphics) {
+    val graphics = g.create()
     try {
-      val alpha = visibilityController.opacity * FOREGROUND_ALPHA
-      graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_ATOP, alpha)
-      super.paintChildren(graphics)
+      if (graphics is Graphics2D) {
+        val alpha = visibilityController.opacity * BACKGROUND_ALPHA
+        graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha)
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+      }
+      graphics.color = BACKGROUND
+      graphics.fillRoundRect(0, 0, bounds.width, bounds.height, 6, 6)
+
+      super.paintComponent(graphics)
     }
     finally {
       graphics.dispose()
     }
   }
 
-  override fun paint(g: Graphics) {
-    paintComponent(g)
-    super.paint(g)
-  }
-
-  override fun paintComponent(g: Graphics) {
-    val r = bounds
-    val graphics = g.create() as Graphics2D
+  override fun paintChildren(g: Graphics) {
+    val graphics = g.create()
     try {
-      val alpha = visibilityController.opacity * BACKGROUND_ALPHA
-      graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha)
-      graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-      graphics.color = BACKGROUND
-      graphics.fillRoundRect(0, 0, r.width, r.height, 6, 6)
+      if (graphics is Graphics2D) {
+        val alpha = visibilityController.opacity
+        graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_ATOP, alpha)
+      }
+      super.paintChildren(graphics)
     }
     finally {
       graphics.dispose()
@@ -87,8 +93,7 @@ class FloatingToolbarComponentImpl(
   }
 
   companion object {
-    val BACKGROUND = JBColor.namedColor("Toolbar.Floating.background", JBColor(0xEDEDED, 0x454A4D))
-    private const val BACKGROUND_ALPHA = 0.9f
-    private const val FOREGROUND_ALPHA = 1.0f
+    private const val BACKGROUND_ALPHA = 0.75f
+    private val BACKGROUND = JBColor.namedColor("Toolbar.Floating.background", JBColor(0xEDEDED, 0x454A4D))
   }
 }

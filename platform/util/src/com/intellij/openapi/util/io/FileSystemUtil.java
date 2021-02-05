@@ -10,6 +10,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.LimitedPool;
+import com.intellij.util.system.CpuArch;
 import com.sun.jna.*;
 import com.sun.jna.platform.win32.Kernel32;
 import com.sun.jna.platform.win32.WinBase;
@@ -57,7 +58,7 @@ public final class FileSystemUtil {
         if (SystemInfo.isWindows && IdeaWin32.isAvailable()) {
           return check(new IdeaWin32MediatorImpl());
         }
-        else if ((SystemInfo.isLinux || SystemInfo.isMac && !SystemInfo.isArm64 || SystemInfo.isSolaris || SystemInfo.isFreeBSD) &&
+        else if ((SystemInfo.isLinux || SystemInfo.isMac && CpuArch.isIntel64() || SystemInfo.isSolaris || SystemInfo.isFreeBSD) &&
                  JnaLoader.isLoaded() && JnaLoader.supportsDirectMapping) {
           return check(new JnaUnixMediatorImpl());
         }
@@ -111,11 +112,8 @@ public final class FileSystemUtil {
    * Checks if a last element in the path is a symlink.
    */
   public static boolean isSymLink(@NotNull String path) {
-    if (SystemInfo.areSymLinksSupported) {
-      FileAttributes attributes = getAttributes(path);
-      return attributes != null && attributes.isSymLink();
-    }
-    return false;
+    FileAttributes attributes = getAttributes(path);
+    return attributes != null && attributes.isSymLink();
   }
 
   /**
@@ -324,8 +322,8 @@ public final class FileSystemUtil {
         boolean isDirectory = (mode & LibC.S_IFMT) == LibC.S_IFDIR;
         boolean isSpecial = !isDirectory && (mode & LibC.S_IFMT) != LibC.S_IFREG;
         long size = buffer.getLong(myOffsets[OFF_SIZE]);
-        long mTime1 = SystemInfo.is32Bit ? buffer.getInt(myOffsets[OFF_TIME]) : buffer.getLong(myOffsets[OFF_TIME]);
-        long mTime2 = myCoarseTs ? 0 : SystemInfo.is32Bit ? buffer.getInt(myOffsets[OFF_TIME] + 4) : buffer.getLong(myOffsets[OFF_TIME] + 8);
+        long mTime1 = Native.LONG_SIZE == 4 ? buffer.getInt(myOffsets[OFF_TIME]) : buffer.getLong(myOffsets[OFF_TIME]);
+        long mTime2 = myCoarseTs ? 0 : Native.LONG_SIZE == 4 ? buffer.getInt(myOffsets[OFF_TIME] + 4) : buffer.getLong(myOffsets[OFF_TIME] + 8);
         long mTime = mTime1 * 1000 + mTime2 / 1000000;
 
         boolean writable = ownFile(buffer) ? (mode & LibC.WRITE_MASK) != 0 : LibC.access(path, LibC.W_OK) == 0;
@@ -479,8 +477,7 @@ public final class FileSystemUtil {
     return readParentCaseSensitivityByJavaIO(anyChild);
   }
 
-  @NotNull
-  static FileAttributes.CaseSensitivity readParentCaseSensitivityByJavaIO(@NotNull File anyChild) {
+  static @NotNull FileAttributes.CaseSensitivity readParentCaseSensitivityByJavaIO(@NotNull File anyChild) {
     // try to query this path by different-case strings and deduce case sensitivity from the answers
     if (!anyChild.exists()) {
       return FileAttributes.CaseSensitivity.UNKNOWN;
@@ -529,8 +526,7 @@ public final class FileSystemUtil {
     return FileAttributes.CaseSensitivity.SENSITIVE;
   }
 
-  @NotNull
-  static FileAttributes.CaseSensitivity readCaseSensitivityByNativeAPI(@NotNull File anyChild) {
+  static @NotNull FileAttributes.CaseSensitivity readCaseSensitivityByNativeAPI(@NotNull File anyChild) {
     FileAttributes.CaseSensitivity detected = FileAttributes.CaseSensitivity.UNKNOWN;
     if (JnaLoader.isLoaded()) {
       File parent = anyChild.getParentFile();
@@ -548,15 +544,14 @@ public final class FileSystemUtil {
     return detected;
   }
 
-  @NotNull
-  private static String toggleCase(@NotNull String name) {
+  private static String toggleCase(String name) {
     String altName = name.toUpperCase(Locale.getDefault());
     if (altName.equals(name)) altName = name.toLowerCase(Locale.getDefault());
     return altName;
   }
 
   /**
-   * @return true when the {@code name} contains case-toggleable characters (for which toLowerCase() != toUpperCase())
+   * @return {@code true} when the {@code name} contains case-toggleable characters (for which toLowerCase() != toUpperCase()).
    * E.g. "Child.txt" is case-toggleable because "CHILD.TXT" != "child.txt", but "122.45" is not.
    */
   public static boolean isCaseToggleable(@NotNull String name) {
@@ -565,7 +560,7 @@ public final class FileSystemUtil {
 
   // return child which name can be used for querying by different-case names (e.g "child.txt" vs "CHILD.TXT")
   // or null if there are none (e.g there's only one child "123.456").
-  private static String findCaseToggleableChild(@NotNull File dir) {
+  private static @Nullable String findCaseToggleableChild(File dir) {
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir.toPath())) {
       for (Path path : stream) {
         String name = path.getFileName().toString();
@@ -579,8 +574,7 @@ public final class FileSystemUtil {
   }
 
   //<editor-fold desc="Windows case sensitivity detection (NTFS-only)">
-  @NotNull
-  private static FileAttributes.CaseSensitivity getNtfsCaseSensitivity(@NotNull String path) {
+  private static FileAttributes.CaseSensitivity getNtfsCaseSensitivity(String path) {
     try {
       Kernel32 kernel32 = Kernel32.INSTANCE;
       NtOsKrnl ntOsKrnl = NtOsKrnl.INSTANCE;
@@ -653,19 +647,24 @@ public final class FileSystemUtil {
   //</editor-fold>
 
   //<editor-fold desc="macOS case sensitivity detection">
-  @NotNull
-  private static FileAttributes.CaseSensitivity getMacOsCaseSensitivity(@NotNull String path) {
+  private static FileAttributes.CaseSensitivity getMacOsCaseSensitivity(String path) {
     try {
       CoreFoundation cf = CoreFoundation.INSTANCE;
 
       CoreFoundation.CFTypeRef url = cf.CFURLCreateFromFileSystemRepresentation(null, path, path.length(), true);
       try {
-        PointerByReference result = new PointerByReference();
-        if (cf.CFURLCopyResourcePropertyForKey(url, CoreFoundation.kCFURLVolumeSupportsCaseSensitiveNamesKey, result, null)) {
-          boolean value = new CoreFoundation.CFBooleanRef(result.getValue()).booleanValue();
+        PointerByReference resultPtr = new PointerByReference();
+        Pointer result;
+        if (!cf.CFURLCopyResourcePropertyForKey(url, CoreFoundation.kCFURLVolumeSupportsCaseSensitiveNamesKey, resultPtr, null)) {
+          LOG.warn("CFURLCopyResourcePropertyForKey(" + path + "): error");
+        }
+        else if ((result = resultPtr.getValue()) == null) {
+          LOG.info("CFURLCopyResourcePropertyForKey(" + path + "): property not available");
+        }
+        else {
+          boolean value = new CoreFoundation.CFBooleanRef(result).booleanValue();
           return value ? FileAttributes.CaseSensitivity.SENSITIVE : FileAttributes.CaseSensitivity.INSENSITIVE;
         }
-        LOG.warn("CFURLCopyResourcePropertyForKey(" + path + "): error");
       }
       finally {
         url.release();
@@ -689,15 +688,14 @@ public final class FileSystemUtil {
   //</editor-fold>
 
   //<editor-fold desc="Linux case sensitivity detection">
-  @NotNull
-  private static FileAttributes.CaseSensitivity getLinuxCaseSensitivity(@NotNull String path) {
+  private static FileAttributes.CaseSensitivity getLinuxCaseSensitivity(String path) {
     try {
       Memory buf = new Memory(256);
       if (LibC.INSTANCE.statfs(path, buf) != 0) {
         if (LOG.isDebugEnabled()) LOG.debug("statfs(" + path + "): error");
       }
       else {
-        long fs = SystemInfo.is32Bit ? buf.getInt(0) : buf.getLong(0);
+        long fs = Native.LONG_SIZE == 4 ? buf.getInt(0) : buf.getLong(0);
         // Btrfs, XFS
         if (fs == 0x9123683e || fs == 0x58465342) {
           return FileAttributes.CaseSensitivity.SENSITIVE;

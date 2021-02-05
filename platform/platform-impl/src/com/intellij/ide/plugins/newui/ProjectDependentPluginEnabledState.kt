@@ -24,10 +24,10 @@ class ProjectDependentPluginEnabledState(
           ""
         else
           ProjectPluginTrackerManager
-            .getInstance()
+            .instance
             .openProjectsPluginTrackers(project)
             .filter { !PluginManagerCore.isDisabled(pluginId) || it.isEnabled(pluginId) }
-            .joinToString(limit = 3) { "<code>${it.project.name}</code>" }
+            .joinToString(limit = 3) { "<code>${it.projectName}</code>" }
       }
       return _projectNames ?: throw IllegalStateException("Should not be used outside EDT")
     }

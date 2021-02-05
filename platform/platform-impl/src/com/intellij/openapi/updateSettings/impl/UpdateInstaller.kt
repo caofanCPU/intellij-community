@@ -17,6 +17,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.util.io.HttpRequests
 import com.intellij.util.io.copy
+import com.intellij.util.system.CpuArch
 import java.io.File
 import java.io.IOException
 import java.net.URL
@@ -171,6 +172,14 @@ internal object UpdateInstaller {
       val javaCopy = File(tempDir, "jre")
       if (javaCopy.exists()) FileUtil.delete(javaCopy)
       FileUtil.copyDir(File(java), javaCopy)
+
+      val jnf = File(java, "../Frameworks/JavaNativeFoundation.framework")
+      if (jnf.isDirectory) {
+        val jnfCopy = File(tempDir, "Frameworks/JavaNativeFoundation.framework")
+        if (jnfCopy.exists()) FileUtil.delete(jnfCopy)
+        FileUtil.copyDir(jnf, jnfCopy)
+      }
+
       java = javaCopy.path
     }
 
@@ -185,7 +194,7 @@ internal object UpdateInstaller {
       }
     }
 
-    val mx = System.getProperty("idea.updater.heap")?.toInt() ?: if (SystemInfo.is32Bit) Runtime.getRuntime().maxMemory() shr 20 else 2000
+    val mx = System.getProperty("idea.updater.heap")?.toInt() ?: if (CpuArch.is32Bit()) Runtime.getRuntime().maxMemory() shr 20 else 2000
 
     args += File(java, if (SystemInfo.isWindows) "bin\\java.exe" else "bin/java").path
     args += "-Xmx${mx}m"
@@ -218,6 +227,7 @@ internal object UpdateInstaller {
   private fun getTempDir() = File(PathManager.getTempPath(), "patch-update")
 
   private fun getJdkSuffix(): String = when {
+    SystemInfo.isMac && CpuArch.isArm64() -> "-jbr11-aarch64"
     !SystemInfo.isMac && Files.isDirectory(Paths.get(PathManager.getHomePath(), "jbr-x86")) -> "-jbr11-x86"
     Files.isDirectory(Paths.get(PathManager.getHomePath(), "jbr")) -> "-jbr11"
     else -> "-no-jbr"

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea;
 
 import com.intellij.idea.ActionsBundle;
@@ -36,10 +36,7 @@ import git4idea.changes.GitOutgoingChangesProvider;
 import git4idea.checkin.GitCheckinEnvironment;
 import git4idea.checkin.GitCommitAndPushExecutor;
 import git4idea.checkout.GitCheckoutProvider;
-import git4idea.config.GitExecutableManager;
-import git4idea.config.GitExecutableProblemsNotifier;
-import git4idea.config.GitExecutableValidator;
-import git4idea.config.GitVersion;
+import git4idea.config.*;
 import git4idea.diff.GitDiffProvider;
 import git4idea.history.GitHistoryProvider;
 import git4idea.i18n.GitBundle;
@@ -51,7 +48,6 @@ import git4idea.rollback.GitRollbackEnvironment;
 import git4idea.roots.GitIntegrationEnabler;
 import git4idea.status.GitChangeProvider;
 import git4idea.update.GitUpdateEnvironment;
-import git4idea.util.GitVcsConsoleWriter;
 import git4idea.vfs.GitVFSListener;
 import org.jetbrains.annotations.*;
 
@@ -145,6 +141,13 @@ public final class GitVcs extends AbstractVcs {
   @NotNull
   public String getDisplayName() {
     return DISPLAY_NAME.get();
+  }
+
+  @Nls
+  @NotNull
+  @Override
+  public String getShortNameWithMnemonic() {
+    return GitBundle.message("git4idea.vcs.name.with.mnemonic");
   }
 
   @Override
@@ -252,7 +255,7 @@ public final class GitVcs extends AbstractVcs {
         buffer.append(exception.getMessage());
       }
       final String msg = buffer.toString();
-      UIUtil.invokeLaterIfNeeded(() -> Messages.showErrorDialog(myProject, msg, GitBundle.getString("error.dialog.title")));
+      UIUtil.invokeLaterIfNeeded(() -> Messages.showErrorDialog(myProject, msg, GitBundle.message("error.dialog.title")));
     }
   }
 
@@ -262,15 +265,6 @@ public final class GitVcs extends AbstractVcs {
   @NotNull
   public GitVersion getVersion() {
     return GitExecutableManager.getInstance().getVersion(myProject);
-  }
-
-  /**
-   * Shows a command line message in the Version Control Console
-   * @deprecated use {@link GitVcsConsoleWriter}
-   */
-  @Deprecated
-  public void showCommandLine(@Nls String cmdLine) {
-    GitVcsConsoleWriter.getInstance(myProject).showCommandLine(cmdLine);
   }
 
   @Override
@@ -348,8 +342,7 @@ public final class GitVcs extends AbstractVcs {
 
   @Override
   public boolean arePartialChangelistsSupported() {
-    return !GitStageManagerKt.isStagingAreaAvailable() ||
-           !GitStageManagerKt.stageLineStatusTrackerRegistryOption().asBoolean();
+    return true;
   }
 
   @TestOnly
@@ -369,8 +362,8 @@ public final class GitVcs extends AbstractVcs {
 
   @Override
   public boolean isWithCustomLocalChanges() {
-    return GitStageManagerKt.isStagingAreaAvailable() &&
-           GitStageManagerKt.stageLocalChangesRegistryOption().asBoolean();
+    return GitVcsApplicationSettings.getInstance().isStagingAreaEnabled() &&
+           GitStageManagerKt.canEnableStagingArea();
   }
 
   @Override

@@ -100,20 +100,6 @@ public class TreeModelBuilder implements ChangesViewModelBuilder {
     return new DefaultTreeModel(ChangesBrowserNode.createRoot());
   }
 
-  /**
-   * @deprecated Use {@link TreeModelBuilder#buildFromChanges(Project, ChangesGroupingPolicyFactory, Collection, ChangeNodeDecorator)}.
-   */
-  @Deprecated
-  @NotNull
-  public static DefaultTreeModel buildFromChanges(@NotNull Project project,
-                                                  boolean showFlatten,
-                                                  @NotNull Collection<? extends Change> changes,
-                                                  @Nullable ChangeNodeDecorator changeNodeDecorator) {
-    return new TreeModelBuilder(project, showFlatten)
-      .setChanges(changes, changeNodeDecorator)
-      .build();
-  }
-
   @NotNull
   public static DefaultTreeModel buildFromChanges(@Nullable Project project,
                                                   @NotNull ChangesGroupingPolicyFactory grouping,
@@ -281,6 +267,15 @@ public class TreeModelBuilder implements ChangesViewModelBuilder {
   @NotNull
   public ChangesBrowserNode<?> createTagNode(@NotNull @Nls String tag) {
     return createTagNode(new ChangesBrowserNode.TagImpl(tag));
+  }
+
+  /**
+   * @deprecated Use {@link #createTagNode(ChangesBrowserNode.Tag)} instead.
+   */
+  @NotNull
+  @Deprecated
+  public ChangesBrowserNode<?> createTagNode(@Nullable Object tag) {
+    return createTagNode(ChangesBrowserNode.WrapperTag.wrap(tag));
   }
 
   @NotNull
@@ -563,14 +558,16 @@ public class TreeModelBuilder implements ChangesViewModelBuilder {
 
   @NotNull
   private static ChangesBrowserNode<?> createPathNode(@NotNull StaticFilePath path) {
-    FilePath filePath = VcsUtil.getFilePath(path.getPath(), path.isDirectory());
-    return ChangesBrowserNode.createFilePath(filePath);
+    return ChangesBrowserNode.createFilePath(path.getFilePath());
   }
 
   public boolean isEmpty() {
     return myModel.getChildCount(myRoot) == 0;
   }
 
+  /**
+   * @deprecated Use {@link #setChanges(Collection, ChangeNodeDecorator)} directly.
+   */
   @NotNull
   @Deprecated
   public DefaultTreeModel buildModel(@NotNull List<? extends Change> changes, @Nullable ChangeNodeDecorator changeNodeDecorator) {

@@ -3,10 +3,10 @@ package com.intellij.ide.plugins
 
 import com.intellij.testFramework.EdtRule
 import com.intellij.testFramework.ProjectRule
+import com.intellij.testFramework.RuleChain
 import com.intellij.testFramework.RunsInEdt
 import com.intellij.testFramework.assertions.Assertions.assertThat
 import com.intellij.testFramework.rules.InMemoryFsRule
-import org.junit.ClassRule
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertFalse
@@ -15,23 +15,20 @@ import kotlin.test.assertTrue
 @RunsInEdt
 class PerProjectPluginsTest {
 
-  companion object {
-    @JvmField
-    @ClassRule
-    val projectRule = ProjectRule()
-  }
+  private val inMemoryFsRule = InMemoryFsRule()
+  private val projectRule = ProjectRule()
 
   @Rule
   @JvmField
-  val inMemoryFs = InMemoryFsRule()
-
-  @Rule
-  @JvmField
-  val runInEdt = EdtRule()
+  val chain = RuleChain(
+    inMemoryFsRule,
+    projectRule,
+    EdtRule(),
+  )
 
   @Test
   fun enabledAndDisablePerProject() {
-    val path = inMemoryFs.fs.getPath("/plugin")
+    val path = inMemoryFsRule.fs.getPath("/plugin")
     PluginBuilder()
       .randomId("enabledAndDisablePerProject")
       .build(path)
@@ -40,7 +37,7 @@ class PerProjectPluginsTest {
     assertThat(descriptor).isNotNull
 
     val project = projectRule.project
-    val pluginTrackerManager = ProjectPluginTrackerManager.getInstance()
+    val pluginTrackerManager = ProjectPluginTrackerManager.instance
 
     val loaded = pluginTrackerManager.updatePluginsState(
       listOf(descriptor),

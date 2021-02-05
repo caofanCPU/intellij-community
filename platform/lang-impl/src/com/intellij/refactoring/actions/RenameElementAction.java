@@ -1,6 +1,7 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.actions;
 
+import com.intellij.navigation.TargetPopupPresentation;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
@@ -12,6 +13,7 @@ import com.intellij.refactoring.rename.PsiElementRenameHandler;
 import com.intellij.refactoring.rename.Renamer;
 import com.intellij.refactoring.rename.RenamerFactory;
 import com.intellij.refactoring.util.CommonRefactoringUtil;
+import com.intellij.util.SlowOperations;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
@@ -35,7 +37,7 @@ public class RenameElementAction extends AnAction implements UpdateInBackground 
   @ApiStatus.Internal
   public boolean isAvailable(@NotNull DataContext dataContext) {
     return dataContext.getData(CommonDataKeys.PROJECT) != null
-           && getAvailableRenamers(dataContext).findAny().isPresent();
+           && SlowOperations.allowSlowOperations(() -> getAvailableRenamers(dataContext).findAny().isPresent());
   }
 
   @Override
@@ -50,7 +52,7 @@ public class RenameElementAction extends AnAction implements UpdateInBackground 
       return;
     }
 
-    List<Renamer> renamers = getAvailableRenamers(dataContext).collect(Collectors.toList());
+    List<Renamer> renamers = SlowOperations.allowSlowOperations(() -> getAvailableRenamers(dataContext).collect(Collectors.toList()));
     if (renamers.isEmpty()) {
       String message = RefactoringBundle.getCannotRefactorMessage(
         RefactoringBundle.message("error.wrong.caret.position.symbol.to.refactor")
@@ -70,7 +72,7 @@ public class RenameElementAction extends AnAction implements UpdateInBackground 
       chooseTargetPopup(
         RefactoringBundle.message("what.would.you.like.to.do"),
         renamers,
-        renamer -> renamer::getPresentableText,
+        renamer -> TargetPopupPresentation.builder(renamer.getPresentableText()).presentation(),
         Renamer::performRename
       ).showInBestPositionFor(dataContext);
     }

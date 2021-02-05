@@ -7,10 +7,15 @@ import com.intellij.execution.configurations.RuntimeConfigurationException;
 import com.intellij.execution.configurations.RuntimeConfigurationWarning;
 import com.intellij.execution.junit2.info.MethodLocation;
 import com.intellij.execution.runners.ExecutionEnvironment;
+import com.intellij.execution.target.TargetEnvironment;
+import com.intellij.execution.target.TargetEnvironmentUtil;
+import com.intellij.execution.target.local.LocalTargetEnvironment;
+import com.intellij.execution.target.local.LocalTargetEnvironmentRequest;
 import com.intellij.execution.testframework.SearchForTestsTask;
 import com.intellij.execution.testframework.SourceScope;
 import com.intellij.execution.testframework.TestRunnerBundle;
 import com.intellij.execution.testframework.TestSearchScope;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.DumbService;
@@ -59,12 +64,19 @@ public class TestPackage extends TestObject {
     return data.getScope().getSourceScope(getConfiguration());
   }
 
+  @SuppressWarnings("deprecation")
   @Override
-  public SearchForTestsTask createSearchingForTestsTask() throws ExecutionException {
+  public @Nullable SearchForTestsTask createSearchingForTestsTask() throws ExecutionException {
+    return createSearchingForTestsTask(new LocalTargetEnvironment(new LocalTargetEnvironmentRequest()));
+  }
+
+  @Override
+  public @Nullable SearchForTestsTask createSearchingForTestsTask(@NotNull TargetEnvironment remoteEnvironment) throws ExecutionException {
     final JUnitConfiguration.Data data = getConfiguration().getPersistentData();
     final Module module = getConfiguration().getConfigurationModule().getModule();
     final TestClassFilter classFilter = computeFilter(data);
     return new SearchForTestsTask(getConfiguration().getProject(), myServerSocket) {
+      private boolean myShouldExecuteFinishMethod = true;
       private final Set<Location<?>> myClasses = new LinkedHashSet<>();
       @Override
       protected void search() {
@@ -95,7 +107,20 @@ public class TestPackage extends TestObject {
             addClassesListToJavaParameters(myClasses, CLASS_NAME_FUNCTION, packageName, createTempFiles(), getJavaParameters(), filters);
           }
         }
-        catch (Exception ignored) {}
+        catch (Exception ignored) {
+        }
+
+        myShouldExecuteFinishMethod = !TargetEnvironmentUtil.reuploadRootFile(myTempFile, getTargetEnvironmentRequest(),
+                                                                              remoteEnvironment, getTargetProgressIndicator(),
+                                                                              () -> ApplicationManager.getApplication()
+                                                                            .invokeLater(super::finish, myProject.getDisposed()));
+      }
+
+      @Override
+      public void finish() {
+        if (myShouldExecuteFinishMethod) {
+          super.finish();
+        }
       }
 
       @Override

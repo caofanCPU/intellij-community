@@ -6,7 +6,6 @@ import com.intellij.CommonBundle;
 import com.intellij.codeWithMe.ClientId;
 import com.intellij.configurationStore.StoreUtil;
 import com.intellij.diagnostic.*;
-import com.intellij.execution.process.ProcessIOExecutorService;
 import com.intellij.featureStatistics.fusCollectors.LifecycleUsageTriggerCollector;
 import com.intellij.ide.*;
 import com.intellij.ide.plugins.ContainerDescriptor;
@@ -16,7 +15,6 @@ import com.intellij.idea.ApplicationLoader;
 import com.intellij.idea.Main;
 import com.intellij.idea.StartupUtil;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.application.ex.ApplicationUtil;
@@ -58,6 +56,7 @@ import java.awt.*;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public class ApplicationImpl extends ComponentManagerImpl implements ApplicationEx {
@@ -136,12 +135,12 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
     mySaveAllowed = !(isUnitTestMode || isHeadless);
 
     if (!isUnitTestMode && !isHeadless) {
-      Disposer.register(this, Disposer.newDisposable(), "ui");
+      Disposable uiRootDisposable = Disposer.newDisposable();
+      Disposer.register(this, uiRootDisposable, "ui");
     }
 
-    gatherStatistics = LOG.isDebugEnabled() || isUnitTestMode() || isInternal();
-
     Activity activity = StartUpMeasurer.startActivity("AppDelayQueue instantiation");
+    AtomicReference<Thread> edtThread = new AtomicReference<>();
     Runnable runnable = () -> {
       // instantiate AppDelayQueue which starts "Periodic task thread" which we'll mark busy to prevent this EDT to die
       // that thread was chosen because we know for sure it's running
@@ -151,9 +150,10 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
       Disposer.register(this, () -> {
         AWTAutoShutdown.getInstance().notifyThreadFree(thread); // allow for EDT to exit - needed for Upsource
       });
+      edtThread.set(Thread.currentThread());
     };
     EdtInvocationManager.invokeAndWaitIfNeeded(runnable);
-    myLock = new ReadMostlyRWLock();
+    myLock = new ReadMostlyRWLock(edtThread.get());
     // Acquire IW lock on EDT indefinitely in legacy mode
     if (!USE_SEPARATE_WRITE_THREAD || isUnitTestMode) {
       EdtInvocationManager.invokeAndWaitIfNeeded(() -> acquireWriteIntentLock(getClass()));
@@ -366,20 +366,6 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
     service.shutdownAppScheduledExecutorService();
 
     Disposer.dispose(myLastDisposable);
-
-    if (gatherStatistics) {
-      //noinspection TestOnlyProblems
-      LOG.info(writeActionStatistics());
-      LOG.info(ActionUtil.ActionPauses.STAT.statistics());
-      //noinspection TestOnlyProblems
-      LOG.info(service.statistics()
-               + "; ProcessIOExecutorService threads: " + ((ProcessIOExecutorService)ProcessIOExecutorService.INSTANCE).getThreadCounter());
-    }
-  }
-
-  @TestOnly
-  public @NotNull String writeActionStatistics() {
-    return ActionPauses.WRITE.statistics();
   }
 
   @Override
@@ -1137,6 +1123,8 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
 
   @Override
   public @NotNull AccessToken acquireReadActionLock() {
+    DeprecatedMethodException.report("Use runReadAction() instead");
+
     // if we are inside read action, do not try to acquire read lock again since it will deadlock if there is a pending writeAction
     return checkReadAccessAllowedAndNoPendingWrites() ? AccessToken.EMPTY_ACCESS_TOKEN : new ReadAccessToken();
   }
@@ -1148,19 +1136,11 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
     return myWriteActionPending;
   }
 
-  private final boolean gatherStatistics;
-  private static class ActionPauses {
-    private static final PausesStat WRITE = new PausesStat("Write action");
-  }
-
   private void startWrite(@NotNull Class<?> clazz) {
     if (!isWriteAccessAllowed()) {
       assertIsWriteThread("Write access is allowed from write thread only");
     }
     boolean writeActionPending = myWriteActionPending;
-    if (gatherStatistics && myWriteActionsStack.isEmpty() && !writeActionPending) {
-      ActionPauses.WRITE.started();
-    }
     myWriteActionPending = true;
     try {
       ActivityTracker.getInstance().inc();
@@ -1201,9 +1181,6 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
     }
     finally {
       myWriteActionsStack.pop();
-      if (gatherStatistics && myWriteActionsStack.isEmpty() && !myWriteActionPending) {
-        ActionPauses.WRITE.finished("write action ("+clazz+")");
-      }
       if (myWriteActionsStack.size() == myWriteStackBase) {
         releaseWriteLock();
       }
@@ -1215,6 +1192,8 @@ public class ApplicationImpl extends ComponentManagerImpl implements Application
 
   @Override
   public @NotNull AccessToken acquireWriteActionLock(@NotNull Class<?> clazz) {
+    DeprecatedMethodException.report("Use runWriteAction() instead");
+
     return new WriteAccessToken(clazz);
   }
 

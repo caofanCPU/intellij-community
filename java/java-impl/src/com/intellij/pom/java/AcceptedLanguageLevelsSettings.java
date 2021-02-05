@@ -86,7 +86,7 @@ public class AcceptedLanguageLevelsSettings implements PersistentStateComponent<
             NOTIFICATION_GROUP.createNotification(
               JavaBundle.message("java.preview.features.alert.title"),
               JavaBundle.message("java.preview.features.legal.notice", level.getPresentableText(),
-                                        "<br/><br/><a href=''accept''>" + JavaBundle.message("java.preview.features.accept.notification.link") + "</a>"),
+                                        "<br/><br/><a href='accept'>" + JavaBundle.message("java.preview.features.accept.notification.link") + "</a>"),
               NotificationType.WARNING,
               (notification, event) -> {
                 if (event.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
@@ -141,7 +141,6 @@ public class AcceptedLanguageLevelsSettings implements PersistentStateComponent<
           else {
             LanguageLevelProjectExtension projectExtension = LanguageLevelProjectExtension.getInstance(project);
             projectExtension.setLanguageLevel(languageLevel);
-            projectExtension.setDefault(false);
           }
         }
       });
@@ -212,7 +211,6 @@ public class AcceptedLanguageLevelsSettings implements PersistentStateComponent<
       LanguageLevelProjectExtension projectExtension = LanguageLevelProjectExtension.getInstance(project);
       if (!isLanguageLevelAccepted(projectExtension.getLanguageLevel())) {
         projectExtension.setLanguageLevel(highestAcceptedLevel);
-        projectExtension.setDefault(false);
       }
     });
   }

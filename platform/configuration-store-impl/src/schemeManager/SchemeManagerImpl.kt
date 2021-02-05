@@ -1,11 +1,10 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.configurationStore.schemeManager
 
 import com.intellij.concurrency.ConcurrentCollectionFactory
 import com.intellij.configurationStore.*
 import com.intellij.ide.ui.UITheme
 import com.intellij.ide.ui.laf.TempUIThemeBasedLookAndFeelInfo
-import com.intellij.openapi.application.ex.DecodeDefaultsUtil
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.components.RoamingType
 import com.intellij.openapi.components.StateStorageOperation
@@ -30,7 +29,6 @@ import org.jdom.Document
 import org.jdom.Element
 import java.io.File
 import java.io.IOException
-import java.net.URL
 import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -114,18 +112,28 @@ class SchemeManagerImpl<T : Any, MUTABLE_SCHEME : T>(val fileSpec: String,
     try {
       val bytes: ByteArray
       if (pluginDescriptor == null) {
-        @Suppress("DEPRECATION")
-        val url: URL? = when (requestor) {
-          is TempUIThemeBasedLookAndFeelInfo -> File(resourceName).toURI().toURL()
-          is UITheme -> DecodeDefaultsUtil.getDefaults(requestor.providerClassLoader, resourceName)
-          else -> DecodeDefaultsUtil.getDefaults(requestor, resourceName)
+        when (requestor) {
+          is TempUIThemeBasedLookAndFeelInfo -> {
+            bytes = Files.readAllBytes(Path.of(resourceName))
+          }
+          is UITheme -> {
+            val stream = requestor.providerClassLoader.getResourceAsStream(resourceName.removePrefix("/"))
+            if (stream == null) {
+              LOG.error("Cannot find $resourceName in ${requestor.providerClassLoader}")
+              return
+            }
+            bytes = stream.use { it.readAllBytes()  }
+          }
+          else -> {
+            val stream = (if (requestor is ClassLoader) requestor else requestor!!.javaClass.classLoader)
+              .getResourceAsStream(resourceName.removePrefix("/"))
+            if (stream == null) {
+              LOG.error("Cannot read scheme from $resourceName")
+              return
+            }
+            bytes = stream.use { it.readAllBytes()  }
+          }
         }
-
-        if (url == null) {
-          LOG.error("Cannot read scheme from $resourceName")
-          return
-        }
-        bytes = URLUtil.openStream(url).readAllBytes()
       }
       else {
         val stream = pluginDescriptor.pluginClassLoader.getResourceAsStream(resourceName.removePrefix("/"))
@@ -133,7 +141,7 @@ class SchemeManagerImpl<T : Any, MUTABLE_SCHEME : T>(val fileSpec: String,
           LOG.error("Cannot found scheme $resourceName in ${pluginDescriptor.pluginClassLoader}")
           return
         }
-        bytes = stream.readAllBytes()
+        bytes = stream.use { it.readAllBytes()  }
       }
 
       lazyPreloadScheme(bytes, isOldSchemeNaming) { name, parser ->

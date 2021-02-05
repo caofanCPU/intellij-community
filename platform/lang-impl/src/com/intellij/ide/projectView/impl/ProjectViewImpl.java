@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.projectView.impl;
 
 import com.intellij.application.options.OptionsApplicabilityFilter;
@@ -38,6 +38,7 @@ import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx;
+import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleUtilCore;
@@ -78,7 +79,6 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
-import gnu.trove.THashSet;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -480,7 +480,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
   private SimpleToolWindowPanel myPanel;
   private final Map<String, AbstractProjectViewPane> myId2Pane = new LinkedHashMap<>();
-  private final Collection<AbstractProjectViewPane> myUninitializedPanes = new THashSet<>();
+  private final Collection<AbstractProjectViewPane> myUninitializedPanes = new HashSet<>();
 
   private static final DataKey<ProjectViewImpl> DATA_KEY = DataKey.create("com.intellij.ide.projectView.impl.ProjectViewImpl");
 
@@ -559,7 +559,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
       }
     });
 
-    AbstractProjectViewPane.EP.addExtensionPointListener(project, new ExtensionPointListener<AbstractProjectViewPane>() {
+    AbstractProjectViewPane.EP.addExtensionPointListener(project, new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull AbstractProjectViewPane extension, @NotNull PluginDescriptor pluginDescriptor) {
         reloadPanes();
@@ -579,6 +579,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
 
   private void constructUi() {
     myViewContentPanel = new JPanel();
+    myViewContentPanel.putClientProperty(FileEditorManagerImpl.OPEN_IN_PREVIEW_TAB, true);
     myPanel = new SimpleToolWindowPanel(true).setProvideQuickActions(false);
     myPanel.setContent(myViewContentPanel);
   }
@@ -2114,7 +2115,7 @@ public class ProjectViewImpl extends ProjectView implements PersistentStateCompo
   }
 
   static class Action extends ToggleOptionAction implements DumbAware {
-    private Action(@NotNull Function<ProjectViewImpl, Option> optionSupplier) {
+    private Action(@NotNull Function<? super ProjectViewImpl, ? extends Option> optionSupplier) {
       super(event -> {
         Project project = event.getProject();
         ProjectView view = project == null || project.isDisposed() ? null : getInstance(project);

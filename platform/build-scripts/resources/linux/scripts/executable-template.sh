@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+# Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 # ---------------------------------------------------------------------
 # __product_full__ startup script.
@@ -27,13 +27,15 @@ CUT=$(command -v cut)
 READLINK=$(command -v readlink)
 XARGS=$(command -v xargs)
 DIRNAME=$(command -v dirname)
-MKTEMP=$(command -v mktemp)
-RM=$(command -v rm)
 CAT=$(command -v cat)
 SED=$(command -v sed)
 
-if [ -z "$UNAME" ] || [ -z "$GREP" ] || [ -z "$CUT" ] || [ -z "$DIRNAME" ] || [ -z "$MKTEMP" ] || [ -z "$RM" ] || [ -z "$CAT" ] || [ -z "$SED" ]; then
-  message "Required tools are missing - check beginning of \"$0\" file for details."
+if [ -z "$UNAME" ] || [ -z "$GREP" ] || [ -z "$CUT" ] || [ -z "$DIRNAME" ] || [ -z "$CAT" ] || [ -z "$SED" ]; then
+  TOOLS_MSG="Required tools are missing:"
+  for tool in uname egrep cut readlink xargs dirname cat sed ; do
+     test -z "$(command -v $tool)" && TOOLS_MSG="$TOOLS_MSG $tool"
+  done
+  message "$TOOLS_MSG (SHELL=$SHELL PATH=$PATH)"
   exit 1
 fi
 
@@ -56,6 +58,7 @@ IDE_BIN_HOME=$(pwd)
 IDE_HOME=$("$DIRNAME" "$IDE_BIN_HOME")
 cd "${OLDPWD}" || exit 2
 
+CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 PRODUCT_VENDOR="__product_vendor__"
 PATHS_SELECTOR="__system_selector__"
 
@@ -68,11 +71,8 @@ if [ -n "$__product_uc___JDK" ] && [ -x "$__product_uc___JDK/bin/java" ]; then
   JDK="$__product_uc___JDK"
 fi
 
-if [ -z "$JDK" ] && [ -s "${XDG_CONFIG_HOME:-$HOME/.config}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__.jdk" ]; then
-  USER_JRE=$("$CAT" "${XDG_CONFIG_HOME:-$HOME/.config}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__.jdk")
-  if [ ! -d "$USER_JRE" ]; then
-    USER_JRE="$IDE_HOME/$USER_JRE"
-  fi
+if [ -z "$JDK" ] && [ -s "${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__.jdk" ]; then
+  USER_JRE=$("$CAT" "${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__.jdk")
   if [ -x "$USER_JRE/bin/java" ]; then
     JDK="$USER_JRE"
   fi
@@ -145,17 +145,12 @@ if [ -z "$JDK" ] || [ ! -x "$JAVA_BIN" ]; then
   if [ -n "$X86_JRE_URL" ] && [ ! -d "$IDE_HOME/jbr-x86" ] && [ "$OS_ARCH" = "i386" -o "$OS_ARCH" = "i686" ]; then
     message "To run __product_full__ on a 32-bit system, please download 32-bit Java runtime from \"$X86_JRE_URL\" and unpack it into \"jbr-x86\" directory."
   else
-    message "No JDK found. Please validate either __product_uc___JDK, JDK_HOME or JAVA_HOME environment variable points to valid JDK installation."
+    message "No JRE found. Please make sure \$__product_uc___JDK, \$JDK_HOME, or \$JAVA_HOME point to valid JRE installation."
   fi
   exit 1
 fi
 
-VERSION_LOG=$("$MKTEMP" -t java.version.log.XXXXXX)
-JAVA_TOOL_OPTIONS='' "$JAVA_BIN" -version 2> "$VERSION_LOG"
-"$GREP" "64-Bit|x86_64|amd64" "$VERSION_LOG" > /dev/null
-BITS=$?
-"$RM" -f "$VERSION_LOG"
-test ${BITS} -eq 0 && BITS="64" || BITS=""
+"$GREP" -q -E -e "OS_ARCH=\"(x86_64|amd64)\"" "$JDK/release" 2> /dev/null && BITS="64" || BITS=""
 
 # ---------------------------------------------------------------------
 # Collect JVM options and IDE properties.
@@ -166,35 +161,43 @@ if [ -n "$__product_uc___PROPERTIES" ]; then
 fi
 
 VM_OPTIONS_FILE=""
+USER_VM_OPTIONS_FILE=""
 # shellcheck disable=SC2154
 if [ -n "$__product_uc___VM_OPTIONS" ] && [ -r "$__product_uc___VM_OPTIONS" ]; then
-  # explicit
+  # 1. $<IDE_NAME>_VM_OPTIONS
   VM_OPTIONS_FILE="$__product_uc___VM_OPTIONS"
-elif [ -r "$IDE_HOME.vmoptions" ]; then
-  # Toolbox
-  VM_OPTIONS_FILE="$IDE_HOME.vmoptions"
-elif [ -r "${XDG_CONFIG_HOME:-$HOME/.config}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__$BITS.vmoptions" ]; then
-  # user-overridden
-  VM_OPTIONS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__$BITS.vmoptions"
-elif [ -r "$IDE_BIN_HOME/__vm_options__$BITS.vmoptions" ]; then
-  # default, standard installation
-  VM_OPTIONS_FILE="$IDE_BIN_HOME/__vm_options__$BITS.vmoptions"
+elif [ -r "${IDE_HOME}.vmoptions" ]; then
+  # 2. <IDE_HOME>.vmoptions || <IDE_HOME>/bin/<bin_name>.vmoptions + <IDE_HOME>.vmoptions (Toolbox)
+  VM_OPTIONS_FILE="${IDE_HOME}.vmoptions"
+  if ! "$GREP" -q -e "^-ea$" "${IDE_HOME}.vmoptions" && [ -r "${IDE_BIN_HOME}/__vm_options__${BITS}.vmoptions" ]; then
+    VM_OPTIONS_FILE="${IDE_BIN_HOME}/__vm_options__${BITS}.vmoptions"
+    USER_VM_OPTIONS_FILE="${IDE_HOME}.vmoptions"
+  fi
+elif [ -r "${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__${BITS}.vmoptions" ]; then
+  # 3. <config_directory>/<bin_name>.vmoptions
+  VM_OPTIONS_FILE="${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/__vm_options__${BITS}.vmoptions"
 else
-  # default, universal package
-  test "$OS_TYPE" = "Darwin" && OS_SPECIFIC="mac" || OS_SPECIFIC="linux"
-  VM_OPTIONS_FILE="$IDE_BIN_HOME/$OS_SPECIFIC/__vm_options__$BITS.vmoptions"
+  # 4. <IDE_HOME>/bin/[<os>/]<bin_name>.vmoptions [+ <config_directory>/user.vmoptions]
+  if [ -r "${IDE_BIN_HOME}/__vm_options__${BITS}.vmoptions" ]; then
+    VM_OPTIONS_FILE="${IDE_BIN_HOME}/__vm_options__${BITS}.vmoptions"
+  else
+    test "$OS_TYPE" = "Darwin" && OS_SPECIFIC="mac" || OS_SPECIFIC="linux"
+    if [ -r "${IDE_BIN_HOME}/${OS_SPECIFIC}/__vm_options__${BITS}.vmoptions" ]; then
+      VM_OPTIONS_FILE="${IDE_BIN_HOME}/${OS_SPECIFIC}/__vm_options__${BITS}.vmoptions"
+    fi
+  fi
+  if [ -r "${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/user.vmoptions" ]; then
+    if [ -n "$VM_OPTIONS_FILE" ]; then
+      VM_OPTIONS="${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/user.vmoptions"
+    else
+      USER_VM_OPTIONS_FILE="${CONFIG_HOME}/${PRODUCT_VENDOR}/${PATHS_SELECTOR}/user.vmoptions"
+    fi
+  fi
 fi
 
 VM_OPTIONS=""
-if [ -r "$VM_OPTIONS_FILE" ]; then
-  VM_OPTIONS=$("$CAT" "$VM_OPTIONS_FILE" | "$GREP" -v "^#.*")
-  if { echo "$VM_OPTIONS" | "$GREP" -q "agentlib:yjpagent"; }; then
-    if [ "$OS_TYPE" = "Linux" ]; then
-      VM_OPTIONS=$(echo "$VM_OPTIONS" | "$SED" -e "s|-agentlib:yjpagent\(-linux\)\?\([^=]*\)|-agentpath:$IDE_BIN_HOME/libyjpagent-linux\2.so|")
-    else
-      VM_OPTIONS=$(echo "$VM_OPTIONS" | "$SED" -e "s|-agentlib:yjpagent[^ ]*||")
-    fi
-  fi
+if [ -n "$VM_OPTIONS_FILE" ]; then
+  VM_OPTIONS=$("$CAT" "$VM_OPTIONS_FILE" "$USER_VM_OPTIONS_FILE" | "$GREP" -v "^#.*")
 else
   message "Cannot find VM options file"
 fi
@@ -217,7 +220,7 @@ IFS="$(printf '\n\t')"
   "-XX:HeapDumpPath=$HOME/java_error_in___vm_options___.hprof" \
   "-Didea.vendor.name=${PRODUCT_VENDOR}" \
   "-Didea.paths.selector=${PATHS_SELECTOR}" \
-  "-Djb.vmOptionsFile=$VM_OPTIONS_FILE" \
+  "-Djb.vmOptionsFile=${USER_VM_OPTIONS_FILE:-${VM_OPTIONS_FILE}}" \
   ${IDE_PROPERTIES_PROPERTY} \
   __ide_jvm_args__ \
   com.intellij.idea.Main \

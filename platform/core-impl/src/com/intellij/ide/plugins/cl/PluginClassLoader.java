@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins.cl;
 
 import com.intellij.diagnostic.PluginException;
@@ -8,9 +8,9 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.util.ShutDownTracker;
-import com.intellij.util.ArrayUtil;
 import com.intellij.util.SmartList;
 import com.intellij.util.lang.ClassPath;
+import com.intellij.util.lang.Resource;
 import com.intellij.util.lang.UrlClassLoader;
 import com.intellij.util.ui.EDT;
 import org.jetbrains.annotations.*;
@@ -218,11 +218,23 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
     }
 
     long startTime = StartUpMeasurer.measuringPluginStartupCosts ? StartUpMeasurer.getCurrentTime() : -1;
-    Class<?> c = loadClassInsideSelf(name, forceLoadFromSubPluginClassloader);
+    Class<?> c;
+    try {
+      c = loadClassInsideSelf(name, forceLoadFromSubPluginClassloader);
+    }
+    catch (IOException e) {
+      throw new ClassNotFoundException(name, e);
+    }
+
     if (c == null) {
       for (ClassLoader classloader : getAllParents()) {
         if (classloader instanceof UrlClassLoader) {
-          c = ((UrlClassLoader)classloader).loadClassInsideSelf(name, false);
+          try {
+            c = ((UrlClassLoader)classloader).loadClassInsideSelf(name, false);
+          }
+          catch (IOException e) {
+            throw new ClassNotFoundException(name, e);
+          }
           if (c != null) {
             break;
           }
@@ -300,7 +312,7 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
   }
 
   @Override
-  public @Nullable Class<?> loadClassInsideSelf(@NotNull String name, boolean forceLoadFromSubPluginClassloader) {
+  public @Nullable Class<?> loadClassInsideSelf(@NotNull String name, boolean forceLoadFromSubPluginClassloader) throws IOException {
     if (packagePrefix != null && isDefinitelyAlienClass(name, packagePrefix)) {
       return null;
     }
@@ -313,7 +325,7 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
 
       Writer logStream = PluginClassLoader.logStream;
       try {
-        c = _findClass(name);
+        c = classPath.findClass(name);
       }
       catch (LinkageError e) {
         if (logStream != null) {
@@ -353,70 +365,81 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
   }
 
   @Override
-  public final URL findResource(String name) {
-    URL resource = findOwnResource(name);
+  public final @Nullable URL findResource(@NotNull String name) {
+    String canonicalPath = toCanonicalPath(name);
+    Resource resource = classPath.findResource(canonicalPath);
     if (resource != null) {
-      return resource;
+      return resource.getURL();
     }
 
     for (ClassLoader classloader : getAllParents()) {
       if (classloader instanceof PluginClassLoader) {
-        resource = ((PluginClassLoader)classloader).findOwnResource(name);
+        resource = ((PluginClassLoader)classloader).classPath.findResource(canonicalPath);
+        if (resource != null) {
+          return resource.getURL();
+        }
       }
       else {
-        resource = classloader.getResource(name);
-      }
-
-      if (resource != null) {
-        return resource;
+        URL resourceUrl = classloader.getResource(canonicalPath);
+        if (resourceUrl != null) {
+          return resourceUrl;
+        }
       }
     }
 
+    if (name.startsWith("/")) {
+      throw new IllegalArgumentException("Do not request resource from classloader using path with leading slash (path=" + name + ")");
+    }
     return null;
   }
 
-  private @Nullable URL findOwnResource(String name) {
-    return super.findResource(name);
-  }
-
   @Override
-  public final InputStream getResourceAsStream(String name) {
-    InputStream stream = getOwnResourceAsStream(name);
-    if (stream != null) {
-      return stream;
+  public final @Nullable InputStream getResourceAsStream(@NotNull String name) {
+    String canonicalPath = toCanonicalPath(name);
+
+    Resource resource = classPath.findResource(canonicalPath);
+    if (resource != null) {
+      try {
+        return resource.getInputStream();
+      }
+      catch (IOException e) {
+        Logger.getInstance(PluginClassLoader.class).error(e);
+      }
     }
 
     for (ClassLoader classloader : getAllParents()) {
       if (classloader instanceof PluginClassLoader) {
-        stream = ((PluginClassLoader)classloader).getOwnResourceAsStream(name);
+        resource = ((PluginClassLoader)classloader).classPath.findResource(canonicalPath);
+        if (resource != null) {
+          try {
+            return resource.getInputStream();
+          }
+          catch (IOException e) {
+            Logger.getInstance(PluginClassLoader.class).error(e);
+          }
+        }
       }
       else {
-        stream = classloader.getResourceAsStream(name);
-      }
-
-      if (stream != null) {
-        return stream;
+        InputStream stream = classloader.getResourceAsStream(canonicalPath);
+        if (stream != null) {
+          return stream;
+        }
       }
     }
 
+    if (name.startsWith("/")) {
+      throw new IllegalArgumentException("Do not request resource from classloader using path with leading slash (path=" + name + ")");
+    }
     return null;
   }
 
-  private @Nullable InputStream getOwnResourceAsStream(String name) {
-    return super.getResourceAsStream(name);
-  }
-
   @Override
-  public final Enumeration<URL> findResources(String name) throws IOException {
+  public final @NotNull Enumeration<URL> findResources(@NotNull String name) throws IOException {
     List<Enumeration<URL>> resources = new ArrayList<>();
-    resources.add(findOwnResources(name));
+    resources.add(classPath.getResources(name));
     for (ClassLoader classloader : getAllParents()) {
       if (classloader instanceof PluginClassLoader) {
-        try {
-          resources.add(((PluginClassLoader)classloader).findOwnResources(name));
-        }
-        catch (IOException ignore) {
-        }
+        resources.add(((PluginClassLoader)classloader).classPath.getResources(name));
       }
       else {
         try {
@@ -427,10 +450,6 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
       }
     }
     return new DeepEnumeration(resources);
-  }
-
-  private Enumeration<URL> findOwnResources(String name) throws IOException {
-    return super.findResources(name);
   }
 
   @SuppressWarnings("UnusedDeclaration")
@@ -473,10 +492,10 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
   }
 
   private static final class DeepEnumeration implements Enumeration<URL> {
-    private final List<Enumeration<URL>> list;
+    private final @NotNull List<? extends Enumeration<URL>> list;
     private int myIndex;
 
-    DeepEnumeration(@NotNull List<Enumeration<URL>> enumerations) {
+    DeepEnumeration(@NotNull List<? extends Enumeration<URL>> enumerations) {
       list = enumerations;
     }
 
@@ -510,7 +529,11 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
 
   @ApiStatus.Internal
   public final void attachParent(@NotNull ClassLoader classLoader) {
-    parents = ArrayUtil.append(parents, classLoader);
+    int length = parents.length;
+    ClassLoader[] result = new ClassLoader[length + 1];
+    System.arraycopy(parents, 0, result, 0, length);
+    result[length] = classLoader;
+    parents = result;
     parentListCacheIdCounter.incrementAndGet();
   }
 
@@ -519,10 +542,20 @@ public class PluginClassLoader extends UrlClassLoader implements PluginAwareClas
    */
   @ApiStatus.Internal
   public final boolean detachParent(@NotNull ClassLoader classLoader) {
-    int oldSize = parents.length;
-    parents = ArrayUtil.remove(parents, classLoader);
-    parentListCacheIdCounter.incrementAndGet();
-    return parents.length == oldSize - 1;
+    for (int i = 0; i < parents.length; i++) {
+      if (classLoader != parents[i]) {
+        continue;
+      }
+
+      int length = parents.length;
+      ClassLoader[] result = new ClassLoader[length - 1];
+      System.arraycopy(parents, 0, result, 0, i);
+      System.arraycopy(parents, i + 1, result, i, length - i - 1);
+      parents = result;
+      parentListCacheIdCounter.incrementAndGet();
+      return true;
+    }
+    return false;
   }
 
   @Override

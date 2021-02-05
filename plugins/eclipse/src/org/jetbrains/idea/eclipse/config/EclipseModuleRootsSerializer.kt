@@ -14,10 +14,8 @@ import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.util.Function
-import com.intellij.util.SystemProperties
 import com.intellij.util.text.UniqueNameGenerator
 import com.intellij.workspaceModel.ide.JpsFileEntitySource
-import com.intellij.workspaceModel.ide.append
 import com.intellij.workspaceModel.ide.impl.jps.serialization.*
 import com.intellij.workspaceModel.ide.toPath
 import com.intellij.workspaceModel.storage.*
@@ -62,7 +60,7 @@ class EclipseModuleRootsSerializer : CustomModuleRootsSerializer, StorageManager
                                   customDir: String?,
                                   virtualFileManager: VirtualFileUrlManager): EntitySource? {
     val storageRootUrl = getStorageRoot(imlFileUrl, customDir, virtualFileManager)
-    val classpathUrl = storageRootUrl.append(EclipseXml.CLASSPATH_FILE, virtualFileManager)
+    val classpathUrl = storageRootUrl.append(EclipseXml.CLASSPATH_FILE)
     return EclipseProjectFile(classpathUrl, internalEntitySource)
   }
 
@@ -86,8 +84,7 @@ class EclipseModuleRootsSerializer : CustomModuleRootsSerializer, StorageManager
                                        virtualFileManager)
     }
     else {
-      builder.addJavaModuleSettingsEntity(false, true, storageRootUrl.append("bin", virtualFileManager), null,
-                                          moduleEntity, entitySource)
+      builder.addJavaModuleSettingsEntity(false, true, storageRootUrl.append("bin"), null, moduleEntity, entitySource)
     }
 
     val emlUrl = getEmlFileUrl(imlFileUrl)
@@ -121,10 +118,10 @@ class EclipseModuleRootsSerializer : CustomModuleRootsSerializer, StorageManager
                                 imlFileUrl: VirtualFileUrl,
                                 virtualUrlManager: VirtualFileUrlManager): ModuleEntity {
     fun reportError(message: String) {
-      errorReporter.reportError(message, storageRootUrl.append(EclipseXml.CLASSPATH_FILE, virtualUrlManager))
+      errorReporter.reportError(message, storageRootUrl.append(EclipseXml.CLASSPATH_FILE))
     }
     fun getUrlByRelativePath(path: String): VirtualFileUrl {
-      return if (path.isEmpty()) storageRootUrl else storageRootUrl.append(FileUtil.toSystemIndependentName(path), virtualUrlManager)
+      return if (path.isEmpty()) storageRootUrl else storageRootUrl.append(FileUtil.toSystemIndependentName(path))
     }
 
     val moduleEntity = contentRootEntity.module
@@ -397,7 +394,8 @@ class EclipseModuleRootsSerializer : CustomModuleRootsSerializer, StorageManager
       WriteAction.runAndWait<RuntimeException> {
         getOrCreateVirtualFile(path, this).getOutputStream(this).use {
           //todo use proper line separator
-          EclipseJDOMUtil.output(root, OutputStreamWriter(it, StandardCharsets.UTF_8), SystemProperties.getLineSeparator())
+          EclipseJDOMUtil.output(root, OutputStreamWriter(it, StandardCharsets.UTF_8), //todo inline; schedule
+          System.lineSeparator())
         }
       }
     }

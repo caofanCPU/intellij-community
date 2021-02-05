@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.plugins.pipelines.services
 
 import circlet.automation.bootstrap.AutomationCompilerBootstrap
@@ -8,8 +8,11 @@ import circlet.automation.bootstrap.publicMavenServer
 import circlet.pipelines.config.idea.api.IdeaScriptConfig
 import circlet.pipelines.config.utils.AutomationCompilerConfiguration
 import circlet.platform.client.backgroundDispatcher
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.invokeAndWaitIfNeeded
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -33,7 +36,8 @@ import org.slf4j.event.SubstituteLoggingEvent
 import org.slf4j.helpers.SubstituteLogger
 import runtime.Ui
 import runtime.reactive.*
-import java.io.*
+import runtime.reactive.property.flatMap
+import runtime.reactive.property.map
 import java.nio.file.Files
 import java.nio.file.Paths
 import kotlin.io.path.name
@@ -142,80 +146,87 @@ class SpaceKtsModelBuilder(val project: Project) : LifetimedDisposable by Lifeti
 
     private fun build(logData: LogData) {
       lifetime.using { lt ->
-        val eventLogger = logData.asLogger(lt)
-
-        val outputDir = createTempDir("space-automation-temp")
-        try {
-          val outputDirPath = outputDir.toPath()
-          val compiledJarPath = outputDirPath.resolve("compiledJar.jar")
-          val scriptRuntimePath = outputDirPath.resolve("space-automation-runtime.jar")
-
-          val configuration = automationConfiguration()
-          val compiler = AutomationCompilerBootstrap(log = eventLogger, configuration = configuration)
-
-          val compileResultCode = compiler.compile(script = Paths.get(scriptFile.path), jar = compiledJarPath)
-
-          if (compileResultCode != 0) {
-            _config.value = null
-            _error.value = SpaceBundle.message("kts.toolwindow.error.compilation.failed.code", compileResultCode)
-            return@using
-          }
-
-          if (!Files.isRegularFile(compiledJarPath)) {
-            _config.value = null
-            _error.value = SpaceBundle.message("kts.toolwindow.error.missing.compiled.jar", compiledJarPath.name)
-            return@using
-          }
-
-          // See AutomationCompiler.kt (in space project) where we copy the runtime jar into the output folder for all resolver types
-          if (!Files.exists(scriptRuntimePath)) {
-            _config.value = null
-            _error.value = SpaceBundle.message("kts.toolwindow.error.missing.runtime.jar", scriptRuntimePath.name)
-            return@using
-          }
-
-          val evaluator = AutomationDslEvaluationBootstrap(log = eventLogger, configuration = configuration).loadEvaluatorForIdea()
-          if (evaluator == null) {
-            _config.value = null
-            _error.value = SpaceBundle.message("kts.toolwindow.error.evaluation.service.not.found")
-            return@using
-          }
-          val evalResult = evaluator.evaluateAndValidate(compiledJarPath, scriptRuntimePath)
-
-          if (evalResult.validationErrors.any()) {
-            val validationErrorsPrefix = SpaceBundle.message("kts.toolwindow.validation.errors.prefix")
-            val message = evalResult.validationErrors.joinToString("\n", prefix = "$validationErrorsPrefix\n")
-            logData.error(message)
-            _config.value = null
-            _error.value = message
-            return@using
-          }
-
-          _config.value = evalResult.config
-          _error.value = null
+        invokeAndWaitIfNeeded(ModalityState.NON_MODAL) {
+          // We need to save the automation script to disk before compiling, to take into account the most recent changes.
+          // The script might have dependencies on other files in the project, so we also save other files.
+          FileDocumentManager.getInstance().saveAllDocuments()
         }
-        catch (th: Throwable) {
-          val errors = StringWriter()
-          th.printStackTrace(PrintWriter(errors))
-          val errorText = "${th.message}.\n$errors"
-          logData.error(errorText)
-          // do not touch last config, just update the error state.
-          _error.value = errors.toString()
+        compileAndEvaluate(logData.asLogger(lt), logData)
+      }
+    }
+
+    private fun compileAndEvaluate(eventLogger: KLogger, logData: LogData) {
+      val outputDir = createTempDir("space-automation-temp")
+      try {
+        val outputDirPath = outputDir.toPath()
+        val compiledJarPath = outputDirPath.resolve("compiledJar.jar")
+        val scriptRuntimePath = outputDirPath.resolve("space-automation-runtime.jar")
+
+        val configuration = getAutomationConfigurationWithFallback()
+
+        val compiler = AutomationCompilerBootstrap(log = eventLogger, configuration = configuration)
+        val compileResultCode = compiler.compile(script = Paths.get(scriptFile.path), jar = compiledJarPath)
+
+        if (compileResultCode != 0) {
+          _config.value = null
+          _error.value = SpaceBundle.message("kts.toolwindow.error.compilation.failed.code", compileResultCode)
+          return
         }
-        finally {
-          outputDir.deleteRecursively()
+        if (!Files.isRegularFile(compiledJarPath)) {
+          _config.value = null
+          _error.value = SpaceBundle.message("kts.toolwindow.error.missing.compiled.jar", compiledJarPath.name)
+          return
         }
+        // See AutomationCompiler.kt (in space project) where we copy the runtime jar into the output folder for all resolver types
+        if (!Files.exists(scriptRuntimePath)) {
+          _config.value = null
+          _error.value = SpaceBundle.message("kts.toolwindow.error.missing.runtime.jar", scriptRuntimePath.name)
+          return
+        }
+
+        val evaluator = AutomationDslEvaluationBootstrap(log = eventLogger, configuration = configuration).loadEvaluatorForIdea()
+        if (evaluator == null) {
+          _config.value = null
+          _error.value = SpaceBundle.message("kts.toolwindow.error.evaluation.service.not.found")
+          return
+        }
+
+        val evalResult = evaluator.evaluateAndValidate(compiledJarPath, scriptRuntimePath)
+        if (evalResult.validationErrors.any()) {
+          val validationErrorsPrefix = SpaceBundle.message("kts.toolwindow.validation.errors.prefix")
+          val message = evalResult.validationErrors.joinToString("\n", prefix = "$validationErrorsPrefix\n")
+          logData.error(message)
+          _config.value = null
+          _error.value = message
+          return
+        }
+
+        _config.value = evalResult.config
+        _error.value = null
+      }
+      catch (th: Throwable) {
+        val stackTraceText = th.stackTraceToString()
+        val logMessage = "${th.message}.\n$stackTraceText"
+        logData.error(logMessage)
+        // do not touch last config, just update the error state.
+        _error.value = stackTraceText
+      }
+      finally {
+        outputDir.deleteRecursively()
       }
     }
   }
 }
 
-internal fun automationConfiguration(): AutomationCompilerConfiguration {
-  val spaceClient = SpaceWorkspaceComponent.getInstance().workspace.value?.client
-  // Primary option is to download from currently connected server, fallback to the public maven
-  val server = spaceClient?.server?.let { embeddedMavenServer(it) } ?: publicMavenServer
-  return AutomationCompilerConfiguration.Remote(server = server)
-}
+internal fun getAutomationConfigurationOrNull(): AutomationCompilerConfiguration? =
+  SpaceWorkspaceComponent.getInstance().workspace.value?.client?.server?.let {
+    AutomationCompilerConfiguration.Remote(server = embeddedMavenServer(it))
+  }
+
+
+// Primary option is to download from currently connected server, fallback to the public maven
+internal fun getAutomationConfigurationWithFallback(): AutomationCompilerConfiguration =
+  getAutomationConfigurationOrNull() ?: AutomationCompilerConfiguration.Remote(server = publicMavenServer)
 
 private fun LogData.asLogger(lifetime: Lifetime): KLogger {
   val queue = ObservableQueue.mutable<SubstituteLoggingEvent>()

@@ -3,7 +3,6 @@ package org.jetbrains.intellij.build.devServer
 
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.util.io.FileUtil
-import com.intellij.util.concurrency.AppExecutorUtil
 import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 import io.methvin.watcher.DirectoryChangeListener
@@ -21,6 +20,7 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URI
+import java.nio.file.ClosedWatchServiceException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -34,8 +34,7 @@ private const val SERVER_PORT = 20854
 val skippedPluginModules = hashSetOf(
   // skip intellij.codeWithMe.plugin - quiche downloading should be implemented as a maven lib
   "intellij.codeWithMe.plugin",
-  // both these plugins wants Kotlin plugin - not installed in IDEA running from sources
-  "intellij.gradle.dsl.kotlin.impl",
+  // this plugin wants Kotlin plugin - not installed in IDEA running from sources
   "intellij.android.plugin"
 )
 
@@ -71,7 +70,7 @@ private fun start() {
   @Suppress("SpellCheckingInspection")
   LOG.info("Custom plugins: ${getAdditionalModules()?.joinToString() ?: "not set (use VM property `additional.modules` to specify additional module ids)"}")
   @Suppress("SpellCheckingInspection")
-  LOG.info("Run IDE with VM property -Didea.use.dev.build.server=true to use it")
+  LOG.info("Run IDE on module intellij.platform.bootstrap with VM properties -Didea.use.dev.build.server=true -Djava.system.class.loader=com.intellij.util.lang.PathClassLoader")
   httpServer.start()
 
   val doneSignal = CountDownLatch(1)
@@ -146,15 +145,21 @@ class BuildServer(val homePath: Path) {
 
         val moduleName = p.substring(moduleNamePathOffset, p.indexOf(File.separatorChar, moduleNamePathOffset))
         if (moduleName != "intellij.platform.ide.impl" && moduleName != "intellij.platform.ide") {
-          platformPrefixToPluginBuilder.values.forEach { it.moduleChanged(moduleName, path) }
+          for (ideBuilder in platformPrefixToPluginBuilder.values) {
+            ideBuilder.moduleChanged(moduleName, path)
+          }
         }
       })
       .build()
-    watcher.watchAsync(AppExecutorUtil.getAppExecutorService())
-    Runtime.getRuntime().addShutdownHook(object : Thread() {
-      override fun run() {
-        watcher.close()
+    Thread {
+      try {
+        watcher.watch()
       }
+      catch (ignored: ClosedWatchServiceException) {
+      }
+    }.start()
+    Runtime.getRuntime().addShutdownHook(Thread {
+      watcher.close()
     })
   }
 }

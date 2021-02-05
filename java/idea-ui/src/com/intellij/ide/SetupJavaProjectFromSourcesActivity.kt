@@ -18,10 +18,14 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileTypes.FileTypeRegistry
+import com.intellij.openapi.module.JavaModuleType
+import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.module.ModuleType
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.modifyModules
 import com.intellij.openapi.projectRoots.JavaSdk
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ui.configuration.ModulesProvider
@@ -32,6 +36,7 @@ import com.intellij.openapi.startup.StartupActivity
 import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.vfs.*
 import com.intellij.platform.PlatformProjectOpenProcessor
+import com.intellij.platform.PlatformProjectOpenProcessor.Companion.isOpenedByPlatformProcessor
 import com.intellij.projectImport.ProjectOpenProcessor
 import com.intellij.util.ThrowableRunnable
 import java.io.File
@@ -49,7 +54,7 @@ internal class SetupJavaProjectFromSourcesActivity : StartupActivity {
     if (ApplicationManager.getApplication().isHeadlessEnvironment) {
       return
     }
-    if (project.hasBeenOpenedBySpecificProcessor()) {
+    if (!project.isOpenedByPlatformProcessor()) {
       return
     }
 
@@ -68,10 +73,6 @@ internal class SetupJavaProjectFromSourcesActivity : StartupActivity {
         }
       }
     })
-  }
-
-  private fun Project.hasBeenOpenedBySpecificProcessor(): Boolean {
-    return getUserData(PlatformProjectOpenProcessor.PROJECT_OPENED_BY_PLATFORM_PROCESSOR) != true
   }
 
   private fun searchImporters(projectDirectory: VirtualFile): ArrayListMultimap<ProjectOpenProcessor, VirtualFile> {
@@ -186,7 +187,10 @@ internal class SetupJavaProjectFromSourcesActivity : StartupActivity {
       setCompilerOutputPath(project, compileOutput)
     }
 
-    findAndSetupJdk(project, indicator)
+    val modules = ModuleManager.getInstance(project).modules
+    if (modules.any { it is JavaModuleType }) {
+      findAndSetupJdk(project, indicator)
+    }
 
     if (roots.size > MAX_ROOTS_IN_TRIVIAL_PROJECT_STRUCTURE) {
       notifyAboutAutomaticProjectStructure(project)

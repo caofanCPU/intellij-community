@@ -10,10 +10,10 @@ import com.intellij.openapi.util.Conditions;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.*;
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 public final class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass, ClassInheritorsSearch.SearchParameters> {
@@ -148,17 +148,6 @@ public final class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass
     });
   }
 
-  /**
-   * @deprecated use {@link #search(PsiClass, SearchScope, boolean)} instead
-   */
-  @NotNull
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  public static Query<PsiClass> search(@NotNull final PsiClass aClass, @NotNull SearchScope scope, final boolean checkDeep, final boolean checkInheritance) {
-    DeprecatedMethodException.report("Use ClassInheritorsSearch.search(PsiClass, SearchScope, boolean, boolean, boolean) instead");
-    return search(aClass, scope, checkDeep, checkInheritance, true);
-  }
-
   @NotNull
   public static Query<PsiClass> search(@NotNull final PsiClass aClass, @NotNull SearchScope scope, final boolean checkDeep) {
     return search(aClass, scope, checkDeep, true, true);
@@ -171,7 +160,7 @@ public final class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass
         throw new ProcessCanceledException();
       }
       PsiFile file = aClass.getContainingFile();
-      return (file != null ? file : aClass).getUseScope();
+      return PsiSearchHelper.getInstance(aClass.getProject()).getUseScope(file != null ? file : aClass);
     }), checkDeep);
   }
 

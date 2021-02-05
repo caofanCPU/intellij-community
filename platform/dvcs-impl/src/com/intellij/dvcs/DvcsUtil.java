@@ -35,7 +35,6 @@ import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.impl.status.StatusBarUtil;
 import com.intellij.util.CommonProcessors;
-import com.intellij.util.Function;
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
 import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
@@ -104,7 +103,7 @@ public final class DvcsUtil {
   @NlsSafe
   @NotNull
   public static String getShortNames(@NotNull Collection<? extends Repository> repositories) {
-    return StringUtil.join(repositories, (Function<Repository, String>)repository -> getShortRepositoryName(repository), ", ");
+    return StringUtil.join(repositories, repository -> getShortRepositoryName(repository), ", ");
   }
 
   public static boolean anyRepositoryIsFresh(Collection<? extends Repository> repositories) {
@@ -190,14 +189,6 @@ public final class DvcsUtil {
     };
   }
 
-  /**
-   * @deprecated Call {@link AccessToken#finish()} directly from the AccessToken received by {@link #workingTreeChangeStarted(Project)}
-   */
-  @Deprecated
-  public static void workingTreeChangeFinished(@NotNull Project project, @NotNull AccessToken token) {
-    token.finish();
-  }
-
   public static final Comparator<Repository> REPOSITORY_COMPARATOR = Comparator.comparing(Repository::getPresentableUrl);
 
   public static void assertFileExists(File file, @NonNls @Nls String message) throws IllegalStateException {
@@ -254,7 +245,7 @@ public final class DvcsUtil {
    * If an other exception happens, rethrows it as a {@link RepoStateException}.
    * In the case of success returns the result of the task execution.
    */
-  public static <T> T tryOrThrow(Callable<T> actionToTry, Object details) throws RepoStateException {
+  public static <T> T tryOrThrow(Callable<? extends T> actionToTry, Object details) throws RepoStateException {
     IOException cause = null;
     for (int i = 0; i < IO_RETRIES; i++) {
       try {
@@ -460,7 +451,7 @@ public final class DvcsUtil {
   @NlsSafe
   @NotNull
   public static String joinShortNames(@NotNull Collection<? extends Repository> repositories, int limit) {
-    return joinWithAnd(ContainerUtil.map(repositories, (Function<Repository, String>)repository -> getShortRepositoryName(repository)),
+    return joinWithAnd(ContainerUtil.map(repositories, repository -> getShortRepositoryName(repository)),
                        limit);
   }
 

@@ -10,7 +10,20 @@ import javax.swing.Icon
 object LearningUiManager {
   var learnProject: Project? by WeakReferenceDelegator()
 
-  var activeToolWindow: LearnToolWindow? by WeakReferenceDelegator()
+  private var activeToolWindowWeakRef: LearnToolWindow? by WeakReferenceDelegator()
+
+  var activeToolWindow: LearnToolWindow?
+    get() {
+      val res = activeToolWindowWeakRef
+      if (res != null && res.project.isDisposed) {
+        activeToolWindowWeakRef = null
+        return null
+      }
+      return res
+    }
+    set(value) {
+      activeToolWindowWeakRef = value
+    }
 
   val iconMap = BidirectionalMap<String, Icon>()
 
@@ -28,5 +41,20 @@ object LearningUiManager {
       iconMap[index] = icon
     }
     return index
+  }
+
+  private val callbackMap = mutableMapOf<Int, () -> Unit>()
+  private var currentCallbackId = 0
+
+  /** The returned Id should be used in the text only once */
+  fun addCallback(callback: () -> Unit) : Int {
+    callbackMap[currentCallbackId++] = callback
+    return currentCallbackId - 1
+  }
+
+  fun getAndClearCallback(id: Int): (() -> Unit)? {
+    val result = callbackMap[id]
+    callbackMap.remove(id)
+    return result
   }
 }

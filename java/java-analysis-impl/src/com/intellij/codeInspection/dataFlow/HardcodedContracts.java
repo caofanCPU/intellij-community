@@ -41,6 +41,7 @@ public final class HardcodedContracts {
     instanceCall(JAVA_UTIL_QUEUE, "poll").parameterCount(0),
     instanceCall("java.util.Deque", "pollFirst", "pollLast").parameterCount(0)
     );
+  private static final Set<String> PURE_ARRAY_METHODS = Set.of("binarySearch", "spliterator", "stream", "equals", "deepEquals");
 
   @FunctionalInterface
   interface ContractProvider {
@@ -443,9 +444,15 @@ public final class HardcodedContracts {
       case "isEmpty":
         return emptyCheck(type, true);
       case "isTrue":
-        return new StandardMethodContract(new ValueConstraint[]{FALSE_VALUE}, fail());
+        if (PsiType.BOOLEAN.equals(type) || TypeUtils.typeEquals(JAVA_LANG_BOOLEAN, type)) {
+          return new StandardMethodContract(new ValueConstraint[]{FALSE_VALUE}, fail());
+        }
+        return null;
       case "isFalse":
-        return new StandardMethodContract(new ValueConstraint[]{TRUE_VALUE}, fail());
+        if (PsiType.BOOLEAN.equals(type) || TypeUtils.typeEquals(JAVA_LANG_BOOLEAN, type)) {
+          return new StandardMethodContract(new ValueConstraint[]{TRUE_VALUE}, fail());
+        }
+        return null;
     }
     return null;
   }
@@ -496,8 +503,8 @@ public final class HardcodedContracts {
       return MutationSignature.unknown();
     }
     if (JAVA_UTIL_ARRAYS.equals(className)) {
-      return name.equals("binarySearch") || name.equals("spliterator") || name.equals("stream") ? MutationSignature.pure() :
-      // else: fill, parallelPrefix, parallelSort, sort
+      return PURE_ARRAY_METHODS.contains(name) ? MutationSignature.pure() :
+             // else: fill, parallelPrefix, parallelSort, sort
              MutationSignature.pure().alsoMutatesArg(0);
     }
     if (QUEUE_POLL.methodMatches(method)) {

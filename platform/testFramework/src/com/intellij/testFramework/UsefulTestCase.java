@@ -483,7 +483,7 @@ public abstract class UsefulTestCase extends TestCase {
    *
    * @param cost setup cost in milliseconds
    */
-  private void logPerClassCost(long cost, @NotNull Object2LongOpenHashMap<String> costMap) {
+  private void logPerClassCost(long cost, @NotNull Object2LongOpenHashMap<? super String> costMap) {
     costMap.addTo(getClass().getSuperclass().getName(), cost);
   }
 
@@ -533,6 +533,10 @@ public abstract class UsefulTestCase extends TestCase {
       try {
         testRunnable.run();
         success = true;
+      }
+      catch (AssumptionViolatedException e) {
+        success = true;
+        throw e;
       }
       finally {
         TestLoggerFactory.onTestFinished(success);
@@ -645,7 +649,7 @@ public abstract class UsefulTestCase extends TestCase {
   }
 
   @SafeVarargs
-  public static <T> void assertOrderedCollection(T @NotNull [] collection, Consumer<T> @NotNull ... checkers) {
+  public static <T> void assertOrderedCollection(T @NotNull [] collection, Consumer<? super T> @NotNull ... checkers) {
     assertOrderedCollection(Arrays.asList(collection), checkers);
   }
 
@@ -747,7 +751,7 @@ public abstract class UsefulTestCase extends TestCase {
   }
 
   @SafeVarargs
-  public static <T> void assertOrderedCollection(@NotNull Collection<? extends T> collection, Consumer<T> @NotNull ... checkers) {
+  public static <T> void assertOrderedCollection(@NotNull Collection<? extends T> collection, Consumer<? super T> @NotNull ... checkers) {
     if (collection.size() != checkers.length) {
       Assert.fail(toString(collection));
     }
@@ -766,21 +770,21 @@ public abstract class UsefulTestCase extends TestCase {
   }
 
   @SafeVarargs
-  public static <T> void assertUnorderedCollection(T @NotNull [] collection, Consumer<T> @NotNull ... checkers) {
+  public static <T> void assertUnorderedCollection(T @NotNull [] collection, Consumer<? super T> @NotNull ... checkers) {
     assertUnorderedCollection(Arrays.asList(collection), checkers);
   }
 
   @SafeVarargs
-  public static <T> void assertUnorderedCollection(@NotNull Collection<? extends T> collection, Consumer<T> @NotNull ... checkers) {
+  public static <T> void assertUnorderedCollection(@NotNull Collection<? extends T> collection, Consumer<? super T> @NotNull ... checkers) {
     if (collection.size() != checkers.length) {
       Assert.fail(toString(collection));
     }
-    Set<Consumer<T>> checkerSet = ContainerUtil.set(checkers);
+    Set<Consumer<? super T>> checkerSet = ContainerUtil.set(checkers);
     int i = 0;
     Throwable lastError = null;
     for (final T actual : collection) {
       boolean flag = true;
-      for (final Consumer<T> condition : checkerSet) {
+      for (final Consumer<? super T> condition : checkerSet) {
         Throwable error = accepts(condition, actual);
         if (error == null) {
           checkerSet.remove(condition);
@@ -1042,9 +1046,11 @@ public abstract class UsefulTestCase extends TestCase {
    * Checks that code block throw corresponding exception.
    *
    * @param exceptionCase Block annotated with some exception type
+   * @deprecated Use {@link #assertThrows(Class, ThrowableRunnable)} instead
    */
+  @Deprecated
   protected void assertException(@NotNull AbstractExceptionCase<?> exceptionCase) {
-    assertException(exceptionCase, null);
+    assertThrows(exceptionCase.getExpectedExceptionClass(), null, ()-> exceptionCase.tryClosure());
   }
 
   /**
@@ -1053,10 +1059,11 @@ public abstract class UsefulTestCase extends TestCase {
    *
    * @param exceptionCase    Block annotated with some exception type
    * @param expectedErrorMsg expected error message
+   * @deprecated Use {@link #assertThrows(Class, String, ThrowableRunnable)} instead
    */
-  protected void assertException(@NotNull AbstractExceptionCase exceptionCase, @Nullable String expectedErrorMsg) {
-    //noinspection unchecked
-    assertExceptionOccurred(true, exceptionCase, expectedErrorMsg);
+  @Deprecated
+  protected void assertException(@NotNull AbstractExceptionCase<?> exceptionCase, @Nullable String expectedErrorMsg) {
+    assertThrows(exceptionCase.getExpectedExceptionClass(), expectedErrorMsg, ()->exceptionCase.tryClosure());
   }
 
   /**
@@ -1065,8 +1072,7 @@ public abstract class UsefulTestCase extends TestCase {
    * @param exceptionClass   Expected exception type
    * @param runnable         Block annotated with some exception type
    */
-  public static <T extends Throwable> void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
-                                                        @NotNull ThrowableRunnable<T> runnable) {
+  public static void assertThrows(@NotNull Class<? extends Throwable> exceptionClass, @NotNull ThrowableRunnable<?> runnable) {
     assertThrows(exceptionClass, null, runnable);
   }
 
@@ -1078,49 +1084,12 @@ public abstract class UsefulTestCase extends TestCase {
    * @param expectedErrorMsgPart expected error message, of any
    * @param runnable         Block annotated with some exception type
    */
-  @SuppressWarnings({"unchecked", "SameParameterValue"})
-  public static <T extends Throwable> void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
-                                                        @Nullable String expectedErrorMsgPart,
-                                                        @NotNull ThrowableRunnable<T> runnable) {
-    assertExceptionOccurred(true, new AbstractExceptionCase() {
-      @Override
-      public Class<Throwable> getExpectedExceptionClass() {
-        return (Class<Throwable>)exceptionClass;
-      }
-
-      @Override
-      public void tryClosure() throws Throwable {
-        runnable.run();
-      }
-    }, expectedErrorMsgPart);
-  }
-
-  /**
-   * Checks that code block doesn't throw corresponding exception.
-   *
-   * @param exceptionCase Block annotated with some exception type
-   */
-  protected <T extends Throwable> void assertNoException(@NotNull AbstractExceptionCase<T> exceptionCase) throws T {
-    assertExceptionOccurred(false, exceptionCase, null);
-  }
-
-  protected void assertNoThrowable(@NotNull Runnable closure) {
-    String throwableName = null;
-    try {
-      closure.run();
-    }
-    catch (Throwable thr) {
-      throwableName = thr.getClass().getName();
-    }
-    assertNull(throwableName);
-  }
-
-  private static <T extends Throwable> void assertExceptionOccurred(boolean shouldOccur,
-                                                                    @NotNull AbstractExceptionCase<T> exceptionCase,
-                                                                    String expectedErrorMsgPart) throws T {
+  public static void assertThrows(@NotNull Class<? extends Throwable> exceptionClass,
+                                  @Nullable String expectedErrorMsgPart,
+                                  @NotNull ThrowableRunnable<?> runnable) {
     boolean wasThrown = false;
     try {
-      exceptionCase.tryClosure();
+      runnable.run();
     }
     catch (Throwable e) {
       Throwable cause = e;
@@ -1128,20 +1097,49 @@ public abstract class UsefulTestCase extends TestCase {
         cause = cause.getCause();
       }
 
-      if (shouldOccur) {
-        wasThrown = true;
-        Class<T> expected = exceptionCase.getExpectedExceptionClass();
-        if (!expected.isInstance(cause)) {
-          throw new AssertionError("Expected instance of: " + expected + " actual: " + cause.getClass(), cause);
-        }
-
-        if (expectedErrorMsgPart != null) {
-          assertTrue(cause.getMessage(), cause.getMessage().contains(expectedErrorMsgPart));
-        }
+      wasThrown = true;
+      if (!exceptionClass.isInstance(cause)) {
+        throw new AssertionError("Expected instance of: " + exceptionClass + " actual: " + cause.getClass(), cause);
       }
-      else if (exceptionCase.getExpectedExceptionClass().equals(cause.getClass())) {
-        wasThrown = true;
 
+      if (expectedErrorMsgPart != null) {
+        assertTrue(cause.getMessage(), cause.getMessage().contains(expectedErrorMsgPart));
+      }
+    }
+    finally {
+      if (!wasThrown) {
+        fail(exceptionClass + " must be thrown.");
+      }
+    }
+  }
+
+  /**
+   * Checks that code block doesn't throw corresponding exception.
+   *
+   * @param exceptionCase Block annotated with some exception type
+   * @deprecated Use {@link #assertNoException(Class, ThrowableRunnable)} instead
+   */
+  @Deprecated
+  protected <T extends Throwable> void assertNoException(@NotNull AbstractExceptionCase<T> exceptionCase) throws T {
+    try {
+      assertNoException(exceptionCase.getExpectedExceptionClass(), () -> exceptionCase.tryClosure());
+    }
+    catch (Throwable throwable) {
+      throw new RuntimeException(throwable);
+    }
+  }
+
+  protected static <T extends Throwable> void assertNoException(@NotNull Class<? extends Throwable> exceptionClass, @NotNull ThrowableRunnable<T> runnable) throws T {
+    try {
+      runnable.run();
+    }
+    catch (Throwable e) {
+      Throwable cause = e;
+      while (cause instanceof LoggedErrorProcessor.TestLoggerAssertionError && cause.getCause() != null) {
+        cause = cause.getCause();
+      }
+
+      if (exceptionClass.equals(cause.getClass())) {
         //noinspection UseOfSystemOutOrSystemErr
         System.out.println();
         //noinspection UseOfSystemOutOrSystemErr
@@ -1153,11 +1151,17 @@ public abstract class UsefulTestCase extends TestCase {
         throw e;
       }
     }
-    finally {
-      if (shouldOccur && !wasThrown) {
-        fail(exceptionCase.getExpectedExceptionClass().getName() + " must be thrown.");
-      }
+  }
+
+  protected void assertNoThrowable(@NotNull Runnable closure) {
+    String throwableName = null;
+    try {
+      closure.run();
     }
+    catch (Throwable thr) {
+      throwableName = thr.getClass().getName();
+    }
+    assertNull(throwableName);
   }
 
   protected boolean annotatedWith(@NotNull Class<? extends Annotation> annotationClass) {

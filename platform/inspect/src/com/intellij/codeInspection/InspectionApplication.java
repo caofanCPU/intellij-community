@@ -250,14 +250,15 @@ public final class InspectionApplication implements CommandLineInspectionProgres
     reportMessageNoLineBreak(1, InspectionsBundle.message("inspection.application.initializing.project"));
 
     loadQodanaConfig(projectPath);
-    myInspectionProfile = loadInspectionProfile(project);
+    if (myInspectionProfile == null) {
+      myInspectionProfile = loadInspectionProfile(project);
+    }
 
-    if (myInspectionProfile == null) return;
     myQodanaConfig.updateToolsScopes(myInspectionProfile, project);
 
     AnalysisScope scope = getAnalysisScope(project);
     if (scope == null) return;
-    LOG.info("Used scope: " + scope.toString());
+    LOG.info("Used scope: " + scope);
     if (myQodanaRun) {
       runAnalysisByQodana(this, projectPath, project, myInspectionProfile, scope);
     } else {
@@ -352,7 +353,7 @@ public final class InspectionApplication implements CommandLineInspectionProgres
   private List<VirtualFile> getChangedFiles(@NotNull Project project) throws ExecutionException, InterruptedException {
     ChangeListManager changeListManager = ChangeListManager.getInstance(project);
     CompletableFuture<List<VirtualFile>> future = new CompletableFuture<>();
-    changeListManager.invokeAfterUpdate(() -> {
+    changeListManager.invokeAfterUpdateWithModal(false, null, () -> {
       try {
         List<VirtualFile> files = changeListManager.getAffectedFiles();
         for (VirtualFile file : files) {
@@ -363,7 +364,7 @@ public final class InspectionApplication implements CommandLineInspectionProgres
       catch (Throwable e) {
         future.completeExceptionally(e);
       }
-    }, InvokeAfterUpdateMode.SYNCHRONOUS_NOT_CANCELLABLE, null, null);
+    });
 
     return future.get();
   }
@@ -859,7 +860,7 @@ public final class InspectionApplication implements CommandLineInspectionProgres
       }
 
       @Override
-      public void cannotWriteToFiles(@NotNull List<Path> readonlyFiles) {
+      public void cannotWriteToFiles(@NotNull List<? extends Path> readonlyFiles) {
         StringBuilder files = new StringBuilder();
         for (Path file : readonlyFiles) {
           files.append(file.toString()).append("; ");

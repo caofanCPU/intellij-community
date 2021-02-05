@@ -15,7 +15,11 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.psi.*
+import com.intellij.psi.CommonClassNames
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiJavaFile
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
 import com.intellij.util.ObjectUtils
 import com.intellij.util.indexing.FindSymbolParameters
@@ -23,18 +27,11 @@ import org.jetbrains.annotations.NotNull
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
 
 import static com.intellij.testFramework.EdtTestUtil.runInEdtAndWait
-
 /**
  * @author peter
  */
 class ChooseByNameTest extends LightJavaCodeInsightFixtureTestCase {
-
   static final ELEMENTS_LIMIT = 30
-
-  @Override
-  protected void tearDown() throws Exception {
-    super.tearDown()
-  }
 
   void "test goto class order by matching degree"() {
     def startMatch = myFixture.addClass("class UiUtil {}")
@@ -611,8 +608,12 @@ class Intf {
   }
 
   static AnActionEvent createEvent(Project project, PsiElement context = null) {
-    def dataContext = SimpleDataContext.getSimpleContext(
-      CommonDataKeys.PSI_FILE.name, ObjectUtils.tryCast(context, PsiFile.class), SimpleDataContext.getProjectContext(project))
+    assert project != null
+    def dataContext = SimpleDataContext.getProjectContext(project)
+    PsiFile file = ObjectUtils.tryCast(context, PsiFile.class)
+    if (file != null) {
+      dataContext = SimpleDataContext.getSimpleContext(CommonDataKeys.PSI_FILE, file, dataContext)
+    }
     return AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, dataContext)
   }
 

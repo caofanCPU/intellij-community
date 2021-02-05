@@ -3,6 +3,7 @@ package org.jetbrains.plugins.gradle.service.project;
 
 import com.intellij.build.events.MessageEvent;
 import com.intellij.build.issue.BuildIssue;
+import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.debugger.DebuggerBackendExtension;
@@ -31,7 +32,6 @@ import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.Consumer;
 import com.intellij.util.ReflectionUtil;
-import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.FileCollectionFactory;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.execution.ParametersListUtil;
@@ -653,8 +653,10 @@ public final class CommonGradleProjectResolverExtension extends AbstractProjectR
       Project project = taskId.findProject();
       if (project != null) {
         String title = GradleBundle.message("gradle.project.resolver.orphan.modules.error.title");
-        String message =
-          GradleBundle.message("gradle.project.resolver.orphan.modules.error.description", orphanModules.size(), join(orphanModules, ", "));
+        String targetOption = GradleBundle.message("gradle.settings.text.module.per.source.set",
+                                                   ApplicationNamesInfo.getInstance().getFullProductName());
+        String message = GradleBundle.message("gradle.project.resolver.orphan.modules.error.description", 
+                                              orphanModules.size(), join(orphanModules, ", "), targetOption);
         NotificationData notification = new NotificationData(title, message, NotificationCategory.WARNING, NotificationSource.PROJECT_SYNC);
         ExternalSystemNotificationManager.getInstance(project).showNotification(taskId.getProjectSystemId(), notification);
       }
@@ -780,7 +782,7 @@ public final class CommonGradleProjectResolverExtension extends AbstractProjectR
       lines.addAll(extension.initializationCode(dispatchPort, debugOptions));
     }
 
-    final String script = join(lines, SystemProperties.getLineSeparator());
+    final String script = join(lines, System.lineSeparator());
     initScriptConsumer.consume(script);
   }
 

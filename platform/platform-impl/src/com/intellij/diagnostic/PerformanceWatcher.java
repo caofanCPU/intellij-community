@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.diagnostic;
 
 import com.intellij.application.options.RegistryManager;
@@ -102,7 +102,9 @@ public final class PerformanceWatcher implements Disposable {
     try {
       File appInfoFile = new File(systemDir, IdeaFreezeReporter.APPINFO_FILE_NAME);
       File pidFile = new File(systemDir, PID_FILE_NAME);
-      if (appInfoFile.isFile() && pidFile.isFile()) {
+      // TODO: check jre in app info, not the current
+      // Only report if on JetBrains jre
+      if (SystemInfo.isJetBrainsJvm && appInfoFile.isFile() && pidFile.isFile()) {
         String pid = FileUtil.loadFile(pidFile);
         File[] crashFiles = new File(SystemProperties.getUserHome())
           .listFiles(file -> file.getName().startsWith("java_error_in") && file.getName().endsWith(pid + ".log") && file.isFile());
@@ -114,18 +116,20 @@ public final class PerformanceWatcher implements Disposable {
                 break;
               }
               String content = FileUtil.loadFile(file);
+              // TODO: maybe we need to notify the user
+              if (content.contains("fuck_the_regulations")) {
+                break;
+              }
               Attachment attachment = new Attachment("crash.txt", content);
               attachment.setIncluded(true);
               Attachment[] attachments = new Attachment[]{attachment};
 
               // look for extended crash logs
-              if (SystemInfo.isMac) {
-                File extraLog = new File("jbr_err_pid" + pid + ".log");
-                if (extraLog.isFile() && extraLog.lastModified() > appInfoFile.lastModified()) {
-                  Attachment extraAttachment = new Attachment("jbr_err.txt", FileUtil.loadFile(extraLog));
-                  extraAttachment.setIncluded(true);
-                  attachments = ArrayUtil.append(attachments, extraAttachment);
-                }
+              File extraLog = findExtraLogFile(pid, appInfoFile.lastModified());
+              if (extraLog != null) {
+                Attachment extraAttachment = new Attachment("jbr_err.txt", FileUtil.loadFile(extraLog));
+                extraAttachment.setIncluded(true);
+                attachments = ArrayUtil.append(attachments, extraAttachment);
               }
 
               String message = StringUtil.substringBefore(content, "---------------  P R O C E S S  ---------------");
@@ -144,6 +148,16 @@ public final class PerformanceWatcher implements Disposable {
     catch (IOException e) {
       LOG.info(e);
     }
+  }
+
+  @Nullable
+  private static File findExtraLogFile(String pid, long lastModified) {
+    if (!SystemInfo.isMac) {
+      return null;
+    }
+    String logFileName = "jbr_err_pid" + pid + ".log";
+    List<File> candidates = List.of(new File(SystemProperties.getUserHome(), logFileName), new File(logFileName));
+    return ContainerUtil.find(candidates, file -> file.isFile() && file.lastModified() > lastModified);
   }
 
   private static @NotNull IdePerformanceListener getPublisher() {
@@ -408,6 +422,12 @@ public final class PerformanceWatcher implements Disposable {
            Objects.equals(el1.getFileName(), el2.getFileName());
   }
 
+  public void clearFreezeStacktraces() {
+    if (myCurrentEDTEventChecker != null) {
+      myCurrentEDTEventChecker.stopDumping();
+    }
+  }
+
   public final class Snapshot {
     private final ApdexData myStartGeneralSnapshot = myGeneralApdex;
     private final ApdexData myStartSwingSnapshot = mySwingApdex;
@@ -417,9 +437,14 @@ public final class PerformanceWatcher implements Disposable {
     }
 
     public void logResponsivenessSinceCreation(@NonNls @NotNull String activityName) {
-      LOG.info(activityName + " took " + (System.currentTimeMillis() - myStartMillis) + "ms" +
-               "; general responsiveness: " + myGeneralApdex.summarizePerformanceSince(myStartGeneralSnapshot) +
-               "; EDT responsiveness: " + mySwingApdex.summarizePerformanceSince(myStartSwingSnapshot));
+      LOG.info(getLogResponsivenessSinceCreationMessage(activityName));
+    }
+
+    @NotNull
+    public String getLogResponsivenessSinceCreationMessage(@NonNls @NotNull String activityName) {
+      return activityName + " took " + (System.currentTimeMillis() - myStartMillis) + "ms" +
+             "; general responsiveness: " + myGeneralApdex.summarizePerformanceSince(myStartGeneralSnapshot) +
+             "; EDT responsiveness: " + mySwingApdex.summarizePerformanceSince(myStartSwingSnapshot);
     }
   }
 
@@ -508,16 +533,21 @@ public final class PerformanceWatcher implements Disposable {
       getPublisher().uiFreezeFinished(durationMs, reportDir);
     }
 
-    private void stopDumping() {
+    void stopDumping() {
       SamplingTask task = myDumpTask;
       if (task != null) {
         task.stop();
+        myDumpTask = null;
       }
     }
 
     private String getFreezePlaceSuffix() {
       List<StackTraceElement> stacktraceCommonPart = null;
-      for (ThreadInfo[] info : myDumpTask.getThreadInfos()) {
+      SamplingTask task = myDumpTask;
+      if (task == null) {
+        return "";
+      }
+      for (ThreadInfo[] info : task.getThreadInfos()) {
         ThreadInfo edt = ContainerUtil.find(info, ThreadDumper::isEDT);
         if (edt != null) {
           StackTraceElement[] edtStack = edt.getStackTrace();

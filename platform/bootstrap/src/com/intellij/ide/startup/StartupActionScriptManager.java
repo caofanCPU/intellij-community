@@ -3,7 +3,7 @@ package com.intellij.ide.startup;
 
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.io.NioFiles;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.util.io.Decompressor;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +44,7 @@ public final class StartupActionScriptManager {
     executeActionScriptCommands(loadActionScript(scriptFile), oldTarget, newTarget);
   }
 
-  public static void executeActionScriptCommands(List<ActionCommand> commands,
+  public static void executeActionScriptCommands(List<? extends ActionCommand> commands,
                                                  @NotNull Path oldTarget,
                                                  @NotNull Path newTarget) throws IOException {
     for (ActionCommand command : commands) {
@@ -64,26 +64,27 @@ public final class StartupActionScriptManager {
       for (ActionCommand command : commands) {
         command.execute();
       }
+      return;
     }
-    else {
-      List<ActionCommand> script;
-      try {
-        List<ActionCommand> savedScript = loadActionScript(getActionScriptFile());
-        script = new ArrayList<>(savedScript.size() + commands.size());
-        script.addAll(savedScript);
-        script.addAll(commands);
-      }
-      catch (ObjectStreamException e) {
-        Logger.getInstance(StartupActionScriptManager.class).warn(e);
-        script = new ArrayList<>(commands);
-      }
 
-      saveActionScript(script);
+    List<ActionCommand> script;
+    Path actionScriptFile = getActionScriptFile();
+    try {
+      List<ActionCommand> savedScript = loadActionScript(actionScriptFile);
+      script = new ArrayList<>(savedScript.size() + commands.size());
+      script.addAll(savedScript);
+      script.addAll(commands);
     }
+    catch (ObjectStreamException e) {
+      Logger.getInstance(StartupActionScriptManager.class).warn(e);
+      script = new ArrayList<>(commands);
+    }
+
+    saveActionScript(script, actionScriptFile);
   }
 
   private static @NotNull Path getActionScriptFile() {
-    return Paths.get(PathManager.getPluginTempPath(), ACTION_SCRIPT_FILE);
+    return Path.of(PathManager.getPluginTempPath(), ACTION_SCRIPT_FILE);
   }
 
   public static @NotNull List<ActionCommand> loadActionScript(@NotNull Path scriptFile) throws IOException {
@@ -105,10 +106,6 @@ public final class StartupActionScriptManager {
     catch (ReflectiveOperationException e) {
       throw (StreamCorruptedException)new StreamCorruptedException("Stream error: " + scriptFile).initCause(e);
     }
-  }
-
-  private static void saveActionScript(@Nullable List<ActionCommand> commands) throws IOException {
-    saveActionScript(commands, getActionScriptFile());
   }
 
   public static void saveActionScript(@Nullable List<ActionCommand> commands, @NotNull Path scriptFile)
@@ -210,7 +207,7 @@ public final class StartupActionScriptManager {
 
     private final String mySource;
     private final String myDestination;
-    private final Predicate<String> myFilenameFilter;
+    private final @Nullable Predicate<? super String> myFilenameFilter;
 
     public UnzipCommand(@NotNull Path source, @NotNull Path destination) {
       this(source, destination, null);
@@ -224,7 +221,7 @@ public final class StartupActionScriptManager {
       this(source.toPath(), destination.toPath());
     }
 
-    public UnzipCommand(@NotNull Path source, @NotNull Path destination, @Nullable Predicate<String> filenameFilter) {
+    public UnzipCommand(@NotNull Path source, @NotNull Path destination, @Nullable Predicate<? super String> filenameFilter) {
       mySource = source.toAbsolutePath().toString();
       myDestination = destination.toAbsolutePath().toString();
       myFilenameFilter = filenameFilter;
@@ -274,7 +271,8 @@ public final class StartupActionScriptManager {
     @Override
     public void execute() throws IOException {
       // source here it is directory - Files.deleteIfExists must be not used here
-      NioFiles.deleteRecursively(Paths.get(mySource));
+      // todo use NioFiles (see IDEA-CR-69550)
+      FileUtilRt.delete(new File(mySource));
     }
 
     @Override

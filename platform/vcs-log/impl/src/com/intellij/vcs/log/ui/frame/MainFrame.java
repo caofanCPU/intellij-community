@@ -55,10 +55,8 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import java.awt.*;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
 
 import static com.intellij.openapi.vfs.VfsUtilCore.toVirtualFileArray;
 import static com.intellij.util.ObjectUtils.notNull;
@@ -158,10 +156,10 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
 
     setLayout(new BorderLayout());
     if (withDiffPreview) {
-      myDiffPreview = new FrameDiffPreview<VcsLogChangeProcessor>(createDiffPreview(false, myChangesBrowser),
-                                                                  myUiProperties, myChangesBrowserSplitter, DIFF_SPLITTER_PROPORTION,
-                                                                  myUiProperties.get(MainVcsLogUiProperties.DIFF_PREVIEW_VERTICAL_SPLIT),
-                                                                  0.7f) {
+      myDiffPreview = new FrameDiffPreview<>(createDiffPreview(false, myChangesBrowser),
+                                             myUiProperties, myChangesBrowserSplitter, DIFF_SPLITTER_PROPORTION,
+                                             myUiProperties.get(MainVcsLogUiProperties.DIFF_PREVIEW_VERTICAL_SPLIT),
+                                             0.7f) {
         @Override
         public void updatePreview(boolean state) {
           getPreviewDiff().updatePreview(state);
@@ -282,7 +280,12 @@ public class MainFrame extends JPanel implements DataProvider, Disposable {
       return new QuickActionProvider() {
         @Override
         public @NotNull List<AnAction> getActions(boolean originalProvider) {
-          return SimpleToolWindowPanel.collectActions(myToolbar);
+          AnAction textFilterAction = EmptyAction.wrap(ActionManager.getInstance().getAction(VcsLogActionPlaces.VCS_LOG_FOCUS_TEXT_FILTER));
+          textFilterAction.getTemplatePresentation().setText(VcsLogBundle.message("vcs.log.text.filter.action.text"));
+          List<AnAction> actions = new ArrayList<>();
+          actions.add(textFilterAction);
+          actions.addAll(SimpleToolWindowPanel.collectActions(myToolbar));
+          return actions;
         }
 
         @Override

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.actionSystem.impl;
 
 import com.intellij.concurrency.SensitiveProgressWrapper;
@@ -24,6 +24,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.NotNullFunction;
 import com.intellij.util.NullableFunction;
+import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
@@ -115,6 +116,9 @@ final class ActionUpdater {
     }
     if (myDataContext instanceof AsyncDataContext) { // it's very expensive to create async-context for each custom component
       return myDataContext;                          // and such actions (with custom components, i.e. buttons from dialogs) updates synchronously now
+    }
+    if (myDataContext instanceof PreCachedDataContext) {
+      return myDataContext;
     }
     final Component component = myVisitor.getCustomComponent(action);
     return component != null ? DataManager.getInstance().getDataContext(component) : myDataContext;
@@ -273,7 +277,9 @@ final class ActionUpdater {
       }
 
       List<AnAction> children = getGroupChildren(group, strategy);
-      return ContainerUtil.concat(children, child -> expandGroupChild(child, hideDisabled, strategy));
+      return ContainerUtil.concat(children, child -> TimeoutUtil.compute(
+        () -> expandGroupChild(child, hideDisabled, strategy),
+        1000, ms -> LOG.warn(ms + "ms to expand group child " + ActionManager.getInstance().getId(child))));
     } finally {
       if (myVisitor != null) {
         myVisitor.leaveNode();
@@ -283,7 +289,9 @@ final class ActionUpdater {
 
   private List<AnAction> getGroupChildren(ActionGroup group, UpdateStrategy strategy) {
     return myGroupChildren.computeIfAbsent(group, __ -> {
-      AnAction[] children = strategy.getChildren.fun(group);
+      AnAction[] children = TimeoutUtil.compute(
+        () -> strategy.getChildren.fun(group),
+        1000, ms -> LOG.warn(ms + "ms to expand group child " + ActionManager.getInstance().getId(group)));
       int nullIndex = ArrayUtil.indexOf(children, null);
       if (nullIndex < 0) return Arrays.asList(children);
 
@@ -378,7 +386,7 @@ final class ActionUpdater {
     return hasChildrenWithState(group, true, false, strategy, new LinkedHashSet<>());
   }
 
-  private boolean hasChildrenWithState(ActionGroup group, boolean checkVisible, boolean checkEnabled, UpdateStrategy strategy, LinkedHashSet<ActionGroup> visited) {
+  private boolean hasChildrenWithState(ActionGroup group, boolean checkVisible, boolean checkEnabled, UpdateStrategy strategy, Set<? super ActionGroup> visited) {
     if (group instanceof AlwaysVisibleActionGroup) {
       return true;
     }
@@ -416,7 +424,8 @@ final class ActionUpdater {
         if (hasChildrenWithState(childGroup, checkVisible, checkEnabled, strategy, visited)) {
           return true;
         }
-        if (strategy.canBePerformed.test(childGroup)) {
+        if (strategy.canBePerformed.test(childGroup) &&
+            ((checkVisible && presentation.isVisible()) || (checkEnabled && presentation.isEnabled()))) {
           return true;
         }
       }
@@ -483,13 +492,13 @@ final class ActionUpdater {
   }
 
   private static class UpdateStrategy {
-    final NullableFunction<AnAction, Presentation> update;
-    final NotNullFunction<ActionGroup, AnAction[]> getChildren;
-    final Predicate<ActionGroup> canBePerformed;
+    final NullableFunction<? super AnAction, ? extends Presentation> update;
+    final NotNullFunction<? super ActionGroup, ? extends AnAction[]> getChildren;
+    final Predicate<? super ActionGroup> canBePerformed;
 
-    UpdateStrategy(NullableFunction<AnAction, Presentation> update,
-                   NotNullFunction<ActionGroup, AnAction[]> getChildren,
-                   Predicate<ActionGroup> canBePerformed) {
+    UpdateStrategy(NullableFunction<? super AnAction, ? extends Presentation> update,
+                   NotNullFunction<? super ActionGroup, ? extends AnAction[]> getChildren,
+                   Predicate<? super ActionGroup> canBePerformed) {
       this.update = update;
       this.getChildren = getChildren;
       this.canBePerformed = canBePerformed;

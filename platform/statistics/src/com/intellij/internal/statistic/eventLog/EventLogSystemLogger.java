@@ -13,6 +13,7 @@ import java.util.List;
 
 @ApiStatus.Internal
 public final class EventLogSystemLogger {
+  public static final String DEFAULT_RECORDER = "FUS";
   public static final String GROUP = "event.log";
 
   public static void logMetadataLoad(@NotNull String recorderId, @Nullable String version) {
@@ -50,11 +51,14 @@ public final class EventLogSystemLogger {
                                   int succeed,
                                   int failed,
                                   boolean external,
-                                  @NotNull List<String> successfullySentFiles) {
+                                  @NotNull List<String> successfullySentFiles,
+                                  @NotNull List<Integer> errors) {
     final FeatureUsageData data = new FeatureUsageData().
       addData("total", total).
       addData("send", succeed + failed).
+      addData("succeed", succeed).
       addData("failed", failed).
+      addData("errors", ContainerUtil.map(errors, error -> String.valueOf(error))).
       addData("external", external).
       addData("paths", ContainerUtil.map(successfullySentFiles, path -> EventLogConfiguration.INSTANCE.anonymize(path)));
     logEvent(recorderId, "logs.send", data);
@@ -96,12 +100,21 @@ public final class EventLogSystemLogger {
   }
 
   private static void logEvent(@NotNull String recorderId, @NotNull String eventId, @NotNull FeatureUsageData data) {
-    final StatisticsEventLoggerProvider provider = StatisticsEventLoggerKt.getEventLogProvider(recorderId);
-    provider.getLogger().logAsync(new EventLogGroup(GROUP, provider.getVersion()), eventId, data.build(), false);
+    StatisticsEventLoggerProvider provider = StatisticsEventLoggerKt.getEventLogProvider(recorderId);
+    String groupId = getGroupId(recorderId);
+    provider.getLogger().logAsync(new EventLogGroup(groupId, provider.getVersion()), eventId, data.build(), false);
   }
 
   private static void logEvent(@NotNull String recorderId, @NotNull String eventId) {
-    final StatisticsEventLoggerProvider provider = StatisticsEventLoggerKt.getEventLogProvider(recorderId);
-    provider.getLogger().logAsync(new EventLogGroup(GROUP, provider.getVersion()), eventId, false);
+    StatisticsEventLoggerProvider provider = StatisticsEventLoggerKt.getEventLogProvider(recorderId);
+    String groupId = getGroupId(recorderId);
+    provider.getLogger().logAsync(new EventLogGroup(groupId, provider.getVersion()), eventId, false);
+  }
+
+  private static String getGroupId(@NotNull String recorderId) {
+    if (DEFAULT_RECORDER.equals(recorderId)) {
+      return GROUP;
+    }
+    return StringUtil.toLowerCase(recorderId) + "." + GROUP;
   }
 }

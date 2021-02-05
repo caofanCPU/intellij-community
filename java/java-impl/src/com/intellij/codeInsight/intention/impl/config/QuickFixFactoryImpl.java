@@ -719,7 +719,7 @@ public final class QuickFixFactoryImpl extends QuickFixFactory {
     return new SafeDeleteFix(element);
   }
 
-  @Nullable
+  @NotNull
   @Override
   public List<LocalQuickFix> registerOrderEntryFixes(@NotNull QuickFixActionRegistrar registrar, @NotNull PsiReference reference) {
     return OrderEntryFix.registerFixes(registrar, reference);
@@ -944,7 +944,7 @@ public final class QuickFixFactoryImpl extends QuickFixFactory {
   }
 
   @Override
-  public IntentionAction createMoveClassToPackageFix(@NotNull PsiClass classToMove, @NotNull String packageName) {
+  public @NotNull IntentionAction createMoveClassToPackageFix(@NotNull PsiClass classToMove, @NotNull String packageName) {
     return new MoveToPackageFix(classToMove.getContainingFile(), packageName);
   }
 
@@ -953,5 +953,10 @@ public final class QuickFixFactoryImpl extends QuickFixFactory {
                                                                      @NotNull PsiClass parentClass,
                                                                      @NotNull PsiClass subClass) {
     return Arrays.asList(ImplementOrExtendFix.createActions(subclassRef, subClass, parentClass, false));
+  }
+
+  @Override
+  public @NotNull IntentionAction createSealClassFromPermitsListFix(@NotNull PsiClass classFromPermitsList) {
+    return new SealClassFromPermitsListAction(classFromPermitsList);
   }
 }

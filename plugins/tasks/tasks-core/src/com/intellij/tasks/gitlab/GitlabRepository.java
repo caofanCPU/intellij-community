@@ -53,8 +53,8 @@ public class GitlabRepository extends NewBaseRepositoryImpl {
   private static final Gson GSON = TaskGsonUtil.createDefaultBuilder().create();
 
   // @formatter:off
-  private static final TypeToken<List<GitlabProject>> LIST_OF_PROJECTS_TYPE = new TypeToken<List<GitlabProject>>() {};
-  private static final TypeToken<List<GitlabIssue>> LIST_OF_ISSUES_TYPE = new TypeToken<List<GitlabIssue>>() {};
+  private static final TypeToken<List<GitlabProject>> LIST_OF_PROJECTS_TYPE = new TypeToken<>() {};
+  private static final TypeToken<List<GitlabIssue>> LIST_OF_ISSUES_TYPE = new TypeToken<>() {};
   // @formatter:on
 
   public static final GitlabProject UNSPECIFIED_PROJECT = createUnspecifiedProject();
@@ -225,12 +225,6 @@ public class GitlabRepository extends NewBaseRepositoryImpl {
       name += "/" + myCurrentProject.getName();
     }
     return name;
-  }
-
-  @NotNull
-  @Override
-  public HttpClient getHttpClient() {
-    return super.getHttpClient();
   }
 
   @Nullable

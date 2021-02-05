@@ -15,6 +15,7 @@ import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.GotItTooltip;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.util.containers.ContainerUtil;
@@ -64,7 +65,7 @@ public abstract class RunConfigurationFragmentedEditor<Settings extends RunConfi
     return fragments;
   }
 
-  private void addRunnerSettingsEditors(List<SettingsEditorFragment<Settings, ?>> fragments) {
+  private void addRunnerSettingsEditors(List<? super SettingsEditorFragment<Settings, ?>> fragments) {
     for (Executor executor : Executor.EXECUTOR_EXTENSION_NAME.getExtensionList()) {
       ProgramRunner<RunnerSettings> runner = ProgramRunner.getRunner(executor.getId(), mySettings);
       if (runner == null) {
@@ -154,7 +155,7 @@ public abstract class RunConfigurationFragmentedEditor<Settings extends RunConfi
   }
 
   @Override
-  protected void initFragments(Collection<SettingsEditorFragment<Settings, ?>> fragments) {
+  protected void initFragments(Collection<? extends SettingsEditorFragment<Settings, ?>> fragments) {
     for (SettingsEditorFragment<Settings, ?> fragment : fragments) {
       JComponent component = fragment.getEditorComponent();
       if (component == null) continue;
@@ -171,14 +172,14 @@ public abstract class RunConfigurationFragmentedEditor<Settings extends RunConfi
   }
 
   private void checkGotIt(SettingsEditorFragment<Settings, ?> fragment) {
-    if (!isDefaultSettings() && !fragment.isCanBeHidden() && !fragment.isTag()) {
+    if (!isDefaultSettings() && !fragment.isCanBeHidden() && !fragment.isTag() && StringUtil.isNotEmpty(fragment.getName())) {
       //noinspection unchecked
       Settings clone = (Settings)mySettings.clone();
       fragment.applyEditorTo(clone);
       if (!fragment.isInitiallyVisible(clone)) {
         JComponent component = fragment.getEditorComponent();
-        new GotItTooltip("fragment.hidden." + fragment.getId(), ExecutionBundle.message("gotIt.popup.message", fragment.getName()),
-                         fragment).
+        String text = fragment.getName().replace("\u001B", "");
+        new GotItTooltip("fragment.hidden." + fragment.getId(), ExecutionBundle.message("gotIt.popup.message", text), fragment).
           withHeader(ExecutionBundle.message("gotIt.popup.title")).
           show(component, (c) -> new Point(GotItTooltip.ARROW_SHIFT, c.getHeight()));
       }

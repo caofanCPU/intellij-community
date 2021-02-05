@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileTypes.impl;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -41,7 +41,6 @@ import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.ui.GuiUtils;
 import com.intellij.util.*;
 import com.intellij.util.containers.CollectionFactory;
-import com.intellij.util.io.URLUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -50,8 +49,8 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.jps.model.fileTypes.FileNameMatcherFactory;
 
+import java.io.InputStream;
 import java.lang.reflect.Field;
-import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
@@ -295,9 +294,9 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
     }
 
     try {
-      URL defaultFileTypesUrl = FileTypeManagerImpl.class.getResource("/defaultFileTypes.xml");
-      if (defaultFileTypesUrl != null) {
-        Element defaultFileTypesElement = JDOMUtil.load(URLUtil.openStream(defaultFileTypesUrl));
+      InputStream defaultFileTypeStream = FileTypeManagerImpl.class.getClassLoader().getResourceAsStream("defaultFileTypes.xml");
+      if (defaultFileTypeStream != null) {
+        Element defaultFileTypesElement = JDOMUtil.load(defaultFileTypeStream);
         for (Element e : defaultFileTypesElement.getChildren()) {
           if ("filetypes".equals(e.getName())) {
             for (Element element : e.getChildren(ELEMENT_FILETYPE)) {
@@ -373,7 +372,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
   }
 
   private void instantiatePendingFileTypes() {
-    Collection<FileTypeBean> fileTypes = new ArrayList<>(withReadLock(() -> myPendingFileTypes.values()));
+    Collection<FileTypeBean> fileTypes = withReadLock(() -> new ArrayList<>(myPendingFileTypes.values()));
     for (FileTypeBean fileTypeBean : fileTypes) {
       mergeOrInstantiateFileTypeBean(fileTypeBean);
     }
@@ -544,6 +543,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
     return ObjectUtils.notNull(type, UnknownFileType.INSTANCE);
   }
 
+  @Override
   public void freezeFileTypeTemporarilyIn(@NotNull VirtualFile file, @NotNull Runnable runnable) {
     FileType fileType = file.isDirectory() ? null : file.getFileType();
     Pair<VirtualFile, FileType> old = FILE_TYPE_FIXED_TEMPORARILY.get();
@@ -788,7 +788,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
   public List<FileNameMatcher> getAssociations(@NotNull FileType type) {
     instantiatePendingFileTypeByName(type.getName());
 
-    return withReadLock(() -> myPatternsTable.getAssociations(type));
+    return withReadLock(() -> new ArrayList<>(myPatternsTable.getAssociations(type)));
   }
 
   @Override
@@ -1274,7 +1274,7 @@ public class FileTypeManagerImpl extends FileTypeManagerEx implements Persistent
   FileTypeAssocTable<FileType> getExtensionMap() {
     instantiatePendingFileTypes();
 
-    return withReadLock(() -> myPatternsTable);
+    return myPatternsTable;
   }
 
   void setPatternsTable(@NotNull Set<? extends FileType> fileTypes, @NotNull FileTypeAssocTable<FileType> assocTable) {

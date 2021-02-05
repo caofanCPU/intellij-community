@@ -214,11 +214,10 @@ public final class ConfigImportHelper {
     finally {
       if (tempBackup != null) {
         try {
-          moveTempBackupToStandardBackup(tempBackup, log);
+          moveTempBackupToStandardBackup(tempBackup);
         }
         catch (IOException e) {
-          log.warn(String.format("Couldn't move the backup of current config from temp dir [%s] to backup dir [%s]",
-                                 tempBackup, getBackupPath()), e);
+          log.warn(String.format("Couldn't move the backup of current config from temp dir [%s] to backup dir", tempBackup), e);
         }
       }
     }
@@ -282,7 +281,7 @@ public final class ConfigImportHelper {
 
   @NotNull
   private static File backupCurrentConfigToTempAndDelete(@NotNull Path currentConfig, @NotNull Logger log, boolean smartDelete) throws IOException {
-    File tempBackupDir = FileUtil.createTempDirectory(getConfigDirName(), "-backup");
+    File tempBackupDir = FileUtil.createTempDirectory(getConfigDirName(), "-backup-" + UUID.randomUUID());
     log.info("Backup config from " + currentConfig + " to " + tempBackupDir);
     FileUtil.copyDir(PathManager.getConfigDir().toFile(), tempBackupDir, file -> !shouldSkipFileDuringImport(file.getName()));
 
@@ -330,22 +329,12 @@ public final class ConfigImportHelper {
     }
   }
 
-  private static void moveTempBackupToStandardBackup(@NotNull File backupToMove,
-                                                     @NotNull Logger log) throws IOException {
-    Path backupPath = getBackupPath();
-    log.info("Move backup from " + backupToMove + " to " + backupPath);
-    FileUtil.delete(backupPath);
-    FileUtil.copyDir(backupToMove, backupPath.toFile());
+  private static void moveTempBackupToStandardBackup(@NotNull File backupToMove) throws IOException {
+    new ConfigBackup(PathManager.getConfigDir()).moveToBackup(backupToMove);
   }
 
   @NotNull
-  public static Path getBackupPath() {
-    Path configDir = PathManager.getConfigDir();
-    return configDir.resolveSibling(getConfigDirName() + "-backup");
-  }
-
-  @NotNull
-  private static String getConfigDirName() {
+  static String getConfigDirName() {
     return PathManager.getConfigDir().getFileName().toString();
   }
 
@@ -417,10 +406,10 @@ public final class ConfigImportHelper {
   }
 
   static class ConfigDirsSearchResult {
-    private final List<Pair<Path, FileTime>> directories;
+    private final @NotNull List<? extends Pair<Path, FileTime>> directories;
     private final boolean fromSameProduct;
 
-    ConfigDirsSearchResult(@NotNull List<Pair<Path, FileTime>> directories, boolean fromSameProduct) {
+    ConfigDirsSearchResult(@NotNull List<? extends Pair<Path, FileTime>> directories, boolean fromSameProduct) {
       this.directories = directories;
       this.fromSameProduct = fromSameProduct;
     }
@@ -806,7 +795,7 @@ public final class ConfigImportHelper {
 
   private static void migratePlugins(Path oldPluginsDir,
                                      Path newPluginsDir,
-                                     List<StartupActionScriptManager.ActionCommand> actionCommands,
+                                     List<? extends StartupActionScriptManager.ActionCommand> actionCommands,
                                      ConfigImportOptions options) throws IOException {
     Logger log = options.log;
     try {
@@ -849,7 +838,7 @@ public final class ConfigImportHelper {
     }
   }
 
-  private static List<PluginId> collectPendingPluginUpdates(List<StartupActionScriptManager.ActionCommand> commands,
+  private static List<PluginId> collectPendingPluginUpdates(List<? extends StartupActionScriptManager.ActionCommand> commands,
                                                             ConfigImportOptions options) {
     List<PluginId> result = new ArrayList<>();
     for (StartupActionScriptManager.ActionCommand command : commands) {

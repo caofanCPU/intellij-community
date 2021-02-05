@@ -3,6 +3,58 @@
   "fixed": false,
   "ui": [
     {
+      "key": "BookmarkIcon.background",
+      "description": "The background of the default bookmark icon."
+    },
+    {
+      "key": "MnemonicIcon.foreground",
+      "description": "The text color on the bookmark icon with mnemonic."
+    },
+    {
+      "key": "MnemonicIcon.background",
+      "description": "The background of the bookmark icon with mnemonic."
+    },
+    {
+      "key": "MnemonicIcon.borderColor",
+      "description": "The border color of the bookmark icon with mnemonic."
+    },
+    {
+      "key": "AvailableMnemonic.foreground",
+      "description": "The button text color for the not assigned bookmark mnemonic."
+    },
+    {
+      "key": "AvailableMnemonic.background",
+      "description": "The button background for the not assigned bookmark mnemonic."
+    },
+    {
+      "key": "AvailableMnemonic.borderColor",
+      "description": "The button border color for the not assigned bookmark mnemonic."
+    },
+    {
+      "key": "AssignedMnemonic.foreground",
+      "description": "The button text color for the already assigned bookmark mnemonic."
+    },
+    {
+      "key": "AssignedMnemonic.background",
+      "description": "The button background for the already assigned bookmark mnemonic."
+    },
+    {
+      "key": "AssignedMnemonic.borderColor",
+      "description": "The button border color for the already assigned bookmark mnemonic."
+    },
+    {
+      "key": "CurrentMnemonic.foreground",
+      "description": "The button text color for the currently selected bookmark mnemonic."
+    },
+    {
+      "key": "CurrentMnemonic.background",
+      "description": "The button background for the currently selected bookmark mnemonic."
+    },
+    {
+      "key": "CurrentMnemonic.borderColor",
+      "description": "The button border color for the currently selected bookmark mnemonic."
+    },
+    {
       "key": "BigSpinner.background",
       "description": "A translucent overlay background for decorated panel while loading"
     },
@@ -522,6 +574,10 @@
     },
     {
       "key": "Notification.ToolWindow.warningForeground"
+    },
+    {
+      "key": "Panel.mouseShortcutBackground",
+      "description": "Background of mouse shortcut panel"
     },
     {
       "key": "ParameterInfo.background",

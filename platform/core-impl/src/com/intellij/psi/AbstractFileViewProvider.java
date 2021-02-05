@@ -1,12 +1,9 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi;
 
 import com.intellij.injected.editor.DocumentWindow;
 import com.intellij.injected.editor.VirtualFileWindow;
-import com.intellij.lang.ASTNode;
-import com.intellij.lang.Language;
-import com.intellij.lang.LanguageParserDefinitions;
-import com.intellij.lang.ParserDefinition;
+import com.intellij.lang.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.impl.ApplicationInfoImpl;
 import com.intellij.openapi.command.undo.UndoConstants;
@@ -38,6 +35,7 @@ import com.intellij.psi.impl.source.tree.FileElement;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.util.LocalTimeCounter;
+import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.JBTreeTraverser;
@@ -352,11 +350,11 @@ public abstract class AbstractFileViewProvider extends UserDataHolderBase implem
       return;
     }
 
-    List<FileElement> knownTreeRoots = getKnownTreeRoots();
+    List<FileASTNode> knownTreeRoots = getKnownTreeRoots();
     if (knownTreeRoots.isEmpty()) return;
 
     int fileLength = myContent.getTextLength();
-    for (FileElement fileElement : knownTreeRoots) {
+    for (FileASTNode fileElement : knownTreeRoots) {
       int nodeLength = fileElement.getTextLength();
       if (!isDocumentConsistentWithPsi(fileLength, fileElement, nodeLength)) {
         PsiUtilCore.ensureValid(fileElement.getPsi());
@@ -372,11 +370,11 @@ public abstract class AbstractFileViewProvider extends UserDataHolderBase implem
     }
   }
 
-  private boolean isDocumentConsistentWithPsi(int fileLength, FileElement fileElement, int nodeLength) {
+  private boolean isDocumentConsistentWithPsi(int fileLength, FileASTNode fileElement, int nodeLength) {
     if (nodeLength != fileLength) return false;
 
     if (ApplicationManager.getApplication().isUnitTestMode() && !ApplicationInfoImpl.isInStressTest()) {
-      return fileElement.textMatches(myContent.getText());
+      return fileElement.getPsi().textMatches(myContent.getText());
     }
 
     return true;
@@ -397,7 +395,7 @@ public abstract class AbstractFileViewProvider extends UserDataHolderBase implem
   public abstract List<PsiFile> getCachedPsiFiles();
 
   @NotNull
-  public abstract List<FileElement> getKnownTreeRoots();
+  public abstract List<FileASTNode> getKnownTreeRoots();
 
   public final void markInvalidated() {
     invalidateCachedPsi();
@@ -435,7 +433,7 @@ public abstract class AbstractFileViewProvider extends UserDataHolderBase implem
     }
     Set<AbstractFileViewProvider> copies = getUserData(KNOWN_COPIES);
     if (copies == null) {
-      copies = putUserDataIfAbsent(KNOWN_COPIES, Collections.newSetFromMap(ContainerUtil.createConcurrentWeakMap()));
+      copies = putUserDataIfAbsent(KNOWN_COPIES, Collections.newSetFromMap(CollectionFactory.createConcurrentWeakMap()));
     }
     if (copy.getUserData(KNOWN_COPIES) != null) {
       List<AbstractFileViewProvider> derivations = JBTreeTraverser.from(AbstractFileViewProvider::getKnownCopies).withRoot(copy).toList();

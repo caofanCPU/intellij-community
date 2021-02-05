@@ -1,18 +1,27 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build.io
 
 import java.io.File
+import java.io.InputStream
 import java.lang.System.Logger
 import java.nio.file.Files
+import java.nio.file.Path
+import java.util.*
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * Executes a Java class in a forked JVM.
  */
+@JvmOverloads
 fun runJava(mainClass: String,
             args: Iterable<String>,
             jvmArgs: Iterable<String>,
             classPath: Iterable<String>,
-            logger: Logger) {
+            logger: Logger = System.getLogger(mainClass),
+            timeoutMillis: Long = Timeout.DEFAULT) {
+  val timeout = Timeout(timeoutMillis)
+  var errorReader: Thread? = null
   val classpathFile = Files.createTempFile("classpath-", ".txt")
   try {
     val classPathStringBuilder = StringBuilder()
@@ -38,30 +47,99 @@ fun runJava(mainClass: String,
 
     val process = ProcessBuilder(processArgs).start()
 
-    Thread {
-      process.errorStream.bufferedReader().use { reader ->
-        while (true) {
-          val line = reader.readLine() ?: break
-          logger.warn(line)
-        }
-      }
-    }.start()
+    errorReader = readErrorOutput(process, timeout, logger)
+    readOutputAndBlock(process, timeout, logger)
 
-    process.inputStream.bufferedReader().use { reader ->
-      while (true) {
-        val line = reader.readLine() ?: break
-        logger.info(line)
-      }
+    fun javaRunFailed(reason: String) {
+      // do not throw error, but log as error to reduce bloody groovy stacktrace
+      logger.debug { "classPath=${classPathStringBuilder.substring("-classpath".length)})" }
+      logger.log(Logger.Level.ERROR, null as ResourceBundle?,
+                 "Cannot execute $mainClass (args=$args, vmOptions=$jvmArgs): $reason")
     }
 
-    val exitCode = process.waitFor()
+    if (!process.waitFor(timeout.remainingTime, TimeUnit.MILLISECONDS)) {
+      try {
+        dumpThreads(process.pid())
+      }
+      catch (e: Exception) {
+        logger.warn("Cannot dump threads: ${e.message}")
+      }
+      process.destroyForcibly().waitFor()
+      javaRunFailed("$timeout timeout")
+    }
+    val exitCode = process.exitValue()
     if (exitCode != 0) {
-      throw RuntimeException("Cannot execute $mainClass (exitCode=$exitCode, args=$args, vmOptions=$jvmArgs, " +
-                             "classPath=${classPathStringBuilder.substring("-classpath".length)})")
+      javaRunFailed("exitCode=${process.exitValue()}")
     }
   }
   finally {
     Files.deleteIfExists(classpathFile)
+    errorReader?.join()
+  }
+}
+
+@JvmOverloads
+fun runProcess(vararg args: String, workingDir: Path? = null,
+               logger: Logger = System.getLogger(args.joinToString(separator = " ")),
+               timeoutMillis: Long = Timeout.DEFAULT) {
+  runProcess(args.toList(), workingDir, logger, timeoutMillis)
+}
+
+@JvmOverloads
+fun runProcess(args: List<String>, workingDir: Path? = null,
+               logger: Logger = System.getLogger(args.joinToString(separator = " ")),
+               timeoutMillis: Long = Timeout.DEFAULT) {
+  logger.debug { "Execute: $args" }
+  val timeout = Timeout(timeoutMillis)
+  var errorReader: Thread? = null
+  try {
+    val process = ProcessBuilder(args).directory(workingDir?.toFile()).start()
+
+    errorReader = readErrorOutput(process, timeout, logger)
+    readOutputAndBlock(process, timeout, logger)
+
+    if (!process.waitFor(timeout.remainingTime, TimeUnit.MILLISECONDS)) {
+      process.destroyForcibly().waitFor()
+      throw ProcessRunTimedOut("Cannot execute $args: $timeout timeout")
+    }
+    val exitCode = process.exitValue()
+    if (exitCode != 0) {
+      throw RuntimeException("Cannot execute $args (exitCode=$exitCode)")
+    }
+  }
+  finally {
+    errorReader?.join()
+  }
+}
+
+private fun readOutputAndBlock(process: Process, timeout: Timeout, logger: Logger) {
+  process.inputStream.consume(process, timeout, logger::info)
+}
+
+internal const val errorOutputReaderNamePrefix = "error-output-reader-of-pid-"
+private fun readErrorOutput(process: Process, timeout: Timeout, logger: Logger) =
+  thread(name = "$errorOutputReaderNamePrefix${process.pid()}") {
+    process.errorStream.consume(process, timeout, logger::warn)
+  }
+
+private fun InputStream.consume(process: Process, timeout: Timeout, consumeLine: (String) -> Unit) {
+  bufferedReader().use { reader ->
+    var lineBuilder = StringBuilder()
+    while (!timeout.isElapsed && process.isAlive || reader.ready()) {
+      if (reader.ready()) {
+        val char = reader.read().takeIf { it != -1 }?.toChar()
+        if (char == null || char == '\n' || char == '\r') {
+          consumeLine(lineBuilder.toString())
+          lineBuilder = StringBuilder()
+        }
+        else {
+          lineBuilder.append(char)
+        }
+      }
+      else {
+        Thread.sleep(100L)
+      }
+    }
   }
 }
 
@@ -81,4 +159,26 @@ private fun appendArg(value: String, builder: StringBuilder) {
       else -> builder.append(c)
     }
   }
+}
+
+internal class ProcessRunTimedOut(msg: String) : RuntimeException(msg)
+
+internal class Timeout(private val millis: Long) {
+  companion object {
+    val DEFAULT = TimeUnit.MINUTES.toMillis(10L)
+  }
+
+  private val start = System.currentTimeMillis()
+
+  val remainingTime: Long
+    get() = start.plus(millis)
+              .minus(System.currentTimeMillis())
+              .takeIf { it > 0 } ?: 0
+  val isElapsed: Boolean get() = remainingTime == 0L
+
+  override fun toString() = "${millis}ms"
+}
+
+internal fun dumpThreads(pid: Long) {
+  runProcess("jstack", "$pid")
 }

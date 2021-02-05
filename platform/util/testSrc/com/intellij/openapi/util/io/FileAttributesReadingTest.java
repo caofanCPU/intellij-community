@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.util.io;
 
 import com.intellij.openapi.util.SystemInfo;
@@ -8,6 +8,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.testFramework.rules.TempDirectory;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.TimeoutUtil;
+import com.intellij.util.system.CpuArch;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -20,27 +21,21 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.attribute.DosFileAttributeView;
-import java.nio.file.attribute.PosixFileAttributeView;
-import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
-import java.util.Collections;
 
 import static com.intellij.openapi.util.io.IoTestUtil.assertTimestampsEqual;
 import static com.intellij.openapi.util.io.IoTestUtil.assumeUnix;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeFalse;
 import static org.junit.Assume.assumeTrue;
 
 public abstract class FileAttributesReadingTest {
   public static class MainTest extends FileAttributesReadingTest {
     @BeforeClass
     public static void setUpClass() {
-      assertEquals(SystemInfo.isMac && SystemInfo.isArm64
-                   ? "Nio2" // macOS arm64 only supports NIO2 mediator
-                   : SystemInfo.isWindows
-                     ? "IdeaWin32"
-                     : "JnaUnix",
-                   getMediatorName());
+      assumeFalse(SystemInfo.isMac && CpuArch.isArm64());  // macOS/ARM64 only supports NIO2 mediator
+      assertEquals(SystemInfo.isWindows ? "IdeaWin32" : "JnaUnix", getMediatorName());
     }
   }
 
@@ -86,14 +81,7 @@ public abstract class FileAttributesReadingTest {
   @Test
   public void readOnlyFile() throws IOException {
     File file = tempDir.newFile("file.txt");
-
-    if (SystemInfo.isWindows) {
-      Files.getFileAttributeView(file.toPath(), DosFileAttributeView.class).setReadOnly(true);
-    }
-    else {
-      Files.getFileAttributeView(file.toPath(), PosixFileAttributeView.class).setPermissions(Collections.singleton(PosixFilePermission.OWNER_READ));
-    }
-
+    NioFiles.setReadOnly(file.toPath(), true);
     FileAttributes attributes = getAttributes(file);
     assertEquals(FileAttributes.Type.FILE, attributes.getType());
     assertFalse(attributes.isWritable());
@@ -122,14 +110,7 @@ public abstract class FileAttributesReadingTest {
   @Test
   public void readOnlyDirectory() throws IOException {
     File dir = tempDir.newDirectory("dir");
-
-    if (SystemInfo.isWindows) {
-      Files.getFileAttributeView(dir.toPath(), DosFileAttributeView.class).setReadOnly(true);
-    }
-    else {
-      Files.getFileAttributeView(dir.toPath(), PosixFileAttributeView.class).setPermissions(Collections.singleton(PosixFilePermission.OWNER_READ));
-    }
-
+    NioFiles.setReadOnly(dir.toPath(), true);
     FileAttributes attributes = getAttributes(dir);
     assertEquals(FileAttributes.Type.DIRECTORY, attributes.getType());
     assertEquals(SystemInfo.isWindows, attributes.isWritable());

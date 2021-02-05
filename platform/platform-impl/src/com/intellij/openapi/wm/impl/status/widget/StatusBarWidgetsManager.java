@@ -31,7 +31,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
   public StatusBarWidgetsManager(@NotNull Project project) {
     myProject = project;
 
-    StatusBarWidgetFactory.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<StatusBarWidgetFactory>() {
+    StatusBarWidgetFactory.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull StatusBarWidgetFactory factory, @NotNull PluginDescriptor pluginDescriptor) {
         addWidgetFactory(factory);
@@ -44,7 +44,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
     }, true, this);
 
     //noinspection deprecation
-    StatusBarWidgetProvider.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<StatusBarWidgetProvider>() {
+    StatusBarWidgetProvider.EP_NAME.getPoint().addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull StatusBarWidgetProvider provider, @NotNull PluginDescriptor pluginDescriptor) {
         addWidgetFactory(new StatusBarWidgetProviderToFactoryAdapter(myProject, provider));
@@ -154,7 +154,7 @@ public final class StatusBarWidgetsManager extends SimpleModificationTracker imp
   }
 
   @NotNull
-  private String getAnchor(@NotNull StatusBarWidgetFactory factory, @NotNull List<StatusBarWidgetFactory> availableFactories) {
+  private String getAnchor(@NotNull StatusBarWidgetFactory factory, @NotNull List<? extends StatusBarWidgetFactory> availableFactories) {
     if (factory instanceof StatusBarWidgetProviderToFactoryAdapter) {
       return ((StatusBarWidgetProviderToFactoryAdapter)factory).getAnchor();
     }

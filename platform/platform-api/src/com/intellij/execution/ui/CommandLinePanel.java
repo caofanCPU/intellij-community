@@ -1,7 +1,9 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.ui;
 
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.panel.ComponentPanelBuilder;
+import com.intellij.ui.RawCommandLineEditor;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBDimension;
 import com.intellij.util.ui.JBUI;
@@ -24,8 +26,13 @@ public class CommandLinePanel extends JPanel {
     manager.registerFragments(fragments);
 
     setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-    setMinimumSize(new JBDimension(700, 30));
     buildRows();
+  }
+
+  @Override
+  public Dimension getMinimumSize() {
+    Dimension size = super.getMinimumSize();
+    return new Dimension(Math.min(700, size.width), size.height);
   }
 
   private void buildRows() {
@@ -51,9 +58,12 @@ public class CommandLinePanel extends JPanel {
       .orElse(0);
   }
 
-  public static void setMinimumWidth(Component component, int width) {
+  public static Dimension setMinimumWidth(Component component, int width) {
     Dimension size = new Dimension(width, Math.max(JBUI.scale(30), component.getMinimumSize().height));
     component.setMinimumSize(size);
-    component.setPreferredSize(size);
+    if (component instanceof RawCommandLineEditor) {
+      ((RawCommandLineEditor)component).getTextField().setColumns(0);
+    }
+    return size;
   }
 }

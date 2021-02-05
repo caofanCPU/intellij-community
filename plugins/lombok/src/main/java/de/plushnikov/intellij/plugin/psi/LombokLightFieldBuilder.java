@@ -1,6 +1,5 @@
 package de.plushnikov.intellij.plugin.psi;
 
-import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.CheckUtil;
@@ -10,8 +9,8 @@ import com.intellij.util.IncorrectOperationException;
 import de.plushnikov.intellij.plugin.icon.LombokIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
 import java.util.Objects;
 import java.util.stream.Stream;
 
@@ -27,7 +26,7 @@ public class LombokLightFieldBuilder extends LightFieldBuilder implements Synthe
     super(manager, name, type);
     myName = name;
     myNameIdentifier = new LombokLightIdentifier(manager, name);
-    myModifierList = new LombokLightModifierList(manager, JavaLanguage.INSTANCE, Collections.emptyList());
+    myModifierList = new LombokLightModifierList(manager);
     setBaseIcon(LombokIcons.FIELD_ICON);
   }
 
@@ -53,6 +52,13 @@ public class LombokLightFieldBuilder extends LightFieldBuilder implements Synthe
   @Override
   public boolean hasModifierProperty(@NonNls @NotNull String name) {
     return myModifierList.hasModifierProperty(name);
+  }
+
+  @Nullable
+  @Override
+  public PsiFile getContainingFile() {
+    PsiClass containingClass = getContainingClass();
+    return containingClass != null ? containingClass.getContainingFile() : null;
   }
 
   public LombokLightFieldBuilder withContainingClass(PsiClass psiClass) {
@@ -155,11 +161,12 @@ public class LombokLightFieldBuilder extends LightFieldBuilder implements Synthe
     return
       Objects.equals(myName, that.myName) &&
       Objects.equals(myNameIdentifier, that.myNameIdentifier) &&
-      Objects.equals(myModifierList, that.myModifierList);
+      Objects.equals(myModifierList, that.myModifierList) &&
+      Objects.equals(getContainingClass(), that.getContainingClass());
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(myName, myNameIdentifier, myModifierList);
+    return Objects.hash(myName, myNameIdentifier, myModifierList, getContainingClass());
   }
 }

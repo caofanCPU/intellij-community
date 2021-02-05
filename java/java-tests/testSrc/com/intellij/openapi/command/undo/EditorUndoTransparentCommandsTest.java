@@ -57,7 +57,7 @@ public class EditorUndoTransparentCommandsTest extends EditorUndoTestCase {
     checkEditorState("barfootest", 6, 0, 0);
 
     executeCommand(
-      (Runnable)() -> ApplicationManager.getApplication().runWriteAction(() -> getFirstEditor().getDocument().insertString(0, "___")),
+      () -> ApplicationManager.getApplication().runWriteAction(() -> getFirstEditor().getDocument().insertString(0, "___")),
       "Dummy");
     checkEditorState("___barfootest", 9, 0, 0);
 
@@ -237,7 +237,7 @@ public class EditorUndoTransparentCommandsTest extends EditorUndoTestCase {
     checkEditorText("test");
   }
 
-  private <T extends Exception> void executeTransparentlyInWriteAction(@NotNull ThrowableRunnable<T> action) {
+  private static <T extends Exception> void executeTransparentlyInWriteAction(@NotNull ThrowableRunnable<T> action) {
     executeTransparently(() -> WriteAction.run(action));
   }
 }

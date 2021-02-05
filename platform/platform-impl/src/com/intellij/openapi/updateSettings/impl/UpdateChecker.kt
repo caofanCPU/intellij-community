@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.updateSettings.impl
 
 import com.google.common.annotations.VisibleForTesting
@@ -6,15 +6,14 @@ import com.intellij.ide.IdeBundle
 import com.intellij.ide.actions.SettingsEntryPointAction
 import com.intellij.ide.externalComponents.ExternalComponentManager
 import com.intellij.ide.plugins.*
-import com.intellij.ide.plugins.marketplace.BrokenPluginsService
 import com.intellij.ide.plugins.marketplace.MarketplaceRequests
-import com.intellij.ide.util.PropertiesComponent
 import com.intellij.notification.*
 import com.intellij.notification.impl.NotificationsConfigurationImpl
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.application.*
 import com.intellij.openapi.application.ex.ApplicationInfoEx
+import com.intellij.openapi.application.impl.ApplicationInfoImpl
 import com.intellij.openapi.diagnostic.IdeaLoggingEvent
 import com.intellij.openapi.diagnostic.LogUtil
 import com.intellij.openapi.diagnostic.logger
@@ -69,7 +68,7 @@ object UpdateChecker {
   private var productDataCache: SoftReference<Product>? = null
 
   private var ourDisabledToUpdatePlugins: MutableSet<PluginId>? = null
-  private val ourUpdatedPlugins = hashMapOf<PluginId, PluginDownloader>()
+  private val ourUpdatedPlugins: MutableMap<PluginId, PluginDownloader> = HashMap()
   private val ourShownNotifications = MultiMap<NotificationUniqueType, Notification>()
 
   /**
@@ -94,6 +93,10 @@ object UpdateChecker {
 
   @JvmStatic
   fun getNotificationGroup(): NotificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("IDE and Plugin Updates")
+
+  @JvmStatic
+  fun getNotificationGroupForUpdateResults(): NotificationGroup =
+    NotificationGroupManager.getInstance().getNotificationGroup("Plugin Update Results")
 
   /**
    * For scheduled update checks.
@@ -128,7 +131,7 @@ object UpdateChecker {
    * An immediate check for plugin updates for use from a command line (read "Toolbox").
    */
   @JvmStatic
-  fun getPluginUpdates(): Collection<PluginDownloader>? = checkPluginsUpdate(EmptyProgressIndicator()).availableUpdates
+  fun getPluginUpdates() = checkPluginsUpdate(EmptyProgressIndicator()).availableUpdates
 
   private fun doUpdateAndShowResult(project: Project?,
                                     showSettingsLink: Boolean,
@@ -259,67 +262,94 @@ object UpdateChecker {
    */
   @JvmStatic
   @JvmOverloads
-  fun checkPluginsUpdate(
-    indicator: ProgressIndicator?,
-    newBuildNumber: BuildNumber? = null
-  ): CheckPluginsUpdateResult {
-    BrokenPluginsService.setupUpdateBrokenPlugins()
-    val updateable = collectUpdateablePlugins()
-    if (updateable.isEmpty()) return EMPTY_CHECK_UPDATE_RESULT
+  fun checkPluginsUpdate(indicator: ProgressIndicator?, newBuildNumber: BuildNumber? = null): CheckPluginsUpdateResult {
+    if (System.getProperty("idea.ignore.disabled.plugins") == null) {
+      val brokenPlugins = getBrokenPlugins()
+      if (brokenPlugins.isNotEmpty()) {
+        PluginManagerCore.updateBrokenPlugins(brokenPlugins)
+      }
+    }
 
-    val toUpdate = mutableMapOf<PluginId, PluginDownloader>()
-    val toUpdateDisabled = mutableMapOf<PluginId, PluginDownloader>()
+    val updateable = collectUpdateablePlugins()
+    if (updateable.isEmpty()) {
+      return EMPTY_CHECK_UPDATE_RESULT
+    }
+
+    val toUpdate = HashMap<PluginId, PluginDownloader>()
+    val toUpdateDisabled = HashMap<PluginId, PluginDownloader>()
 
     val latestCustomPluginsAsMap = HashMap<PluginId, IdeaPluginDescriptor>()
     val state = InstalledPluginsState.getInstance()
+    val appInfo = ApplicationInfoEx.getInstanceEx()
     for (host in RepositoryHelper.getPluginHosts()) {
       try {
-        if (host == null && ApplicationInfoEx.getInstanceEx().usesJetBrainsPluginRepository()) {
+        if (host == null && appInfo.usesJetBrainsPluginRepository()) {
           validateCompatibleUpdatesForCurrentPlugins(updateable, toUpdate, toUpdateDisabled, newBuildNumber, state, indicator)
         }
         else {
           val list = RepositoryHelper.loadPlugins(host, newBuildNumber, indicator)
           for (descriptor in list) {
             val id = descriptor.pluginId
-            if (updateable.containsKey(id)) {
-              updateable.remove(id)
+            if (updateable.remove(id) != null) {
               buildDownloaderAndPrepareToInstall(state, descriptor, newBuildNumber, toUpdate, toUpdateDisabled, indicator, host)
             }
-            //collect latest plugins from custom repos
+            // collect latest plugins from custom repos
             val storedDescriptor = latestCustomPluginsAsMap[id]
             if (storedDescriptor == null || StringUtil.compareVersionNumbers(descriptor.version, storedDescriptor.version) > 0) {
-              latestCustomPluginsAsMap[id] = descriptor
+              latestCustomPluginsAsMap.put(id, descriptor)
             }
           }
         }
       }
       catch (e: IOException) {
-        LOG.debug(e)
-        LOG.info("failed to load plugin descriptions from ${host ?: "default repository"}: ${e.message}")
+        LOG.info("failed to load plugin descriptions from ${host ?: "default repository"}: ${e.message}", if (LOG.isDebugEnabled) e else null)
       }
     }
 
-    val incompatiblePlugins: MutableCollection<IdeaPluginDescriptor>? = getIncompatiblePlugins(newBuildNumber, updateable, toUpdate)
-
+    val incompatiblePlugins = getIncompatiblePlugins(newBuildNumber, updateable, toUpdate)
     return CheckPluginsUpdateResult(if (toUpdate.isEmpty()) null else toUpdate.values, toUpdateDisabled.values, latestCustomPluginsAsMap.values, incompatiblePlugins)
+  }
+
+  private fun getBrokenPlugins(): Map<PluginId, Set<String>> {
+    val currentBuild = ApplicationInfoImpl.getInstance().build
+    val brokenPluginsMap = HashMap<PluginId, MutableSet<String>>()
+    for (item in MarketplaceRequests.getInstance().getBrokenPlugins()) {
+      try {
+        val parsedOriginalUntil = item.originalUntil?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+        val parsedOriginalSince = item.originalSince?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+        val originalUntil = BuildNumber.fromString(parsedOriginalUntil, item.id, null) ?: currentBuild
+        val originalSince = BuildNumber.fromString(parsedOriginalSince, item.id, null) ?: currentBuild
+        val until = BuildNumber.fromString(item.until) ?: currentBuild
+        val since = BuildNumber.fromString(item.since) ?: currentBuild
+        if (currentBuild !in originalSince..originalUntil || currentBuild in since..until) continue
+        brokenPluginsMap.computeIfAbsent(PluginId.getId(item.id)) { HashSet() }.add(item.version)
+      }
+      catch (e: Exception) {
+        LOG.error("cannot parse $item", e)
+        continue
+      }
+    }
+    return brokenPluginsMap
   }
 
   private fun getIncompatiblePlugins(
     newBuildNumber: BuildNumber?,
     updateable: MutableMap<PluginId, IdeaPluginDescriptor?>,
     toUpdate: MutableMap<PluginId, PluginDownloader>
-  ): MutableCollection<IdeaPluginDescriptor>? {
-    if (newBuildNumber == null) return null
-    val incompatiblePlugins: MutableCollection<IdeaPluginDescriptor> = HashSet()
+  ): Collection<IdeaPluginDescriptor>? {
+    if (newBuildNumber == null) {
+      return null
+    }
+
+    val incompatiblePlugins = HashSet<IdeaPluginDescriptor>()
     for ((_, installedPlugin) in updateable) {
       // collect plugins that were not updated and would be incompatible with the new version
       // `updateable` could contain bundled plugins with allow-bundled-update - those always have compatible version in IDE
       if (installedPlugin != null && installedPlugin.isEnabled &&
           toUpdate.containsKey(installedPlugin.pluginId).not() &&
           PluginManagerCore.isCompatible(installedPlugin, newBuildNumber).not() &&
-          installedPlugin.isBundled.not()
-      ) {
-        incompatiblePlugins += installedPlugin
+          installedPlugin.isBundled.not()) {
+        incompatiblePlugins.add(installedPlugin)
       }
     }
     return incompatiblePlugins
@@ -384,9 +414,8 @@ object UpdateChecker {
    * we're importing the settings. Null values are for once-installed plugins.
    */
   private fun collectUpdateablePlugins(): MutableMap<PluginId, IdeaPluginDescriptor?> {
-    val updateable = mutableMapOf<PluginId, IdeaPluginDescriptor?>()
-
-    updateable += PluginManagerCore.getPlugins().filter { !it.isBundled || it.allowBundledUpdate() }.associateBy { it.pluginId }
+    val updateable = HashMap<PluginId, IdeaPluginDescriptor?>()
+    PluginManagerCore.getPlugins().filter { !it.isBundled || it.allowBundledUpdate() }.associateByTo(updateable) { it.pluginId }
 
     val onceInstalled = PluginManager.getOnceInstalledIfExists()
     if (onceInstalled != null) {
@@ -405,7 +434,7 @@ object UpdateChecker {
       onceInstalled.toFile().deleteOnExit()
     }
 
-    if (!ApplicationManager.getApplication().isInternal && excludedFromUpdateCheckPlugins.isNotEmpty()) {
+    if (excludedFromUpdateCheckPlugins.isNotEmpty() && !ApplicationManager.getApplication().isInternal) {
       excludedFromUpdateCheckPlugins.forEach {
         val excluded = PluginId.getId(it)
         val plugin = updateable[excluded]
@@ -762,35 +791,6 @@ object UpdateChecker {
   @Suppress("DEPRECATION")
   @JvmField val NOTIFICATIONS =
     NotificationGroup("IDE and Plugin Updates", NotificationDisplayType.STICKY_BALLOON, true, null, null, null, PluginManagerCore.CORE_ID)
-
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  @Deprecated("Use `checkAndPrepareToInstall` without `incompatiblePlugins` parameter", level = DeprecationLevel.ERROR)
-  @JvmStatic
-  @Throws(IOException::class)
-  fun checkAndPrepareToInstall(
-    downloader: PluginDownloader,
-    state: InstalledPluginsState,
-    toUpdate: MutableMap<PluginId, PluginDownloader>,
-    incompatiblePlugins: MutableCollection<IdeaPluginDescriptor>?,
-    indicator: ProgressIndicator?)
-  {
-    checkAndPrepareToInstall(downloader, state, toUpdate, null as BuildNumber?, indicator)
-
-    val pluginId = downloader.id
-    if (PluginManagerCore.isDisabled(pluginId)) return
-    val installedPlugin = PluginManagerCore.getPlugin(pluginId)
-    // collect plugins that were not updated and would be incompatible with the new version
-    if (incompatiblePlugins != null && installedPlugin != null && installedPlugin.isEnabled &&
-        !toUpdate.containsKey(installedPlugin.pluginId) &&
-        !PluginManagerCore.isCompatible(installedPlugin, downloader.buildNumber)) {
-      incompatiblePlugins += installedPlugin
-    }
-  }
-
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  @Deprecated("Replaced", ReplaceWith("PermanentInstallationID.get()", "com.intellij.openapi.application.PermanentInstallationID"))
-  @JvmStatic
-  fun getInstallationUID(@Suppress("UNUSED_PARAMETER") c: PropertiesComponent): String = PermanentInstallationID.get()
 
   @get:ApiStatus.ScheduledForRemoval(inVersion = "2022.1")
   @get:Deprecated(message = "Use disabledToUpdate", replaceWith = ReplaceWith("disabledToUpdate"))

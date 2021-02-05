@@ -50,8 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-@SuppressWarnings("deprecation")
-class InjectionRegistrarImpl extends MultiHostRegistrarImpl implements MultiHostRegistrar {
+class InjectionRegistrarImpl implements MultiHostRegistrar {
   private final PsiDocumentManagerBase myDocumentManagerBase;
   private List<PsiFile> resultFiles;
   private List<Pair<ReferenceInjector, Place>> resultReferences;
@@ -829,7 +828,8 @@ class InjectionRegistrarImpl extends MultiHostRegistrarImpl implements MultiHost
             prevHostEndOffset = shredEndOffset;
           }
           ProperTextRange rangeInHost = new ProperTextRange(start, end);
-          tokens.add(new InjectedLanguageUtilBase.TokenInfo(tokenType, rangeInHost, hostNum, iterator.getTextAttributes()));
+          tokens.add(new InjectedLanguageUtilBase.TokenInfo(tokenType, rangeInHost, hostNum, iterator.getTextAttributes(),
+                                                            iterator.getTextAttributesKeys()));
         }
         range = spilled;
       }

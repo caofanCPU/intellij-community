@@ -46,7 +46,7 @@ class ImlSerializationTest {
     checkSerializationSize(bytes, expectedSize, 2_000)
 
     assertTrue("This assertion is a reminder. Have you updated the serializer? Update the serializer version!",
-               50_000 == expectedSize && "v7" == EntityStorageSerializerImpl.SERIALIZER_VERSION)
+               50_000 == expectedSize && "v9" == EntityStorageSerializerImpl.SERIALIZER_VERSION)
   }
 
   @Test
@@ -61,7 +61,7 @@ class ImlSerializationTest {
     val entity = builder.addEntity(ModifiableSampleEntity::class.java, Source) {
       this.data = "Test"
     }
-    val index = builder.getMutableExternalMapping<String>("MyIndex")
+    val index = builder.getMutableExternalMapping<String>("test.my.index")
     index.addMapping(entity, "Hello")
 
     serializationRoundTrip(builder)

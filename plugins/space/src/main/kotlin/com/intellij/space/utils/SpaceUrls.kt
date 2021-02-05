@@ -1,8 +1,8 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.utils
 
 import circlet.client.api.*
-import circlet.client.api.apps.ES_Service
+import circlet.client.api.apps.ES_App
 import com.intellij.space.settings.SpaceSettings
 import runtime.routing.Location
 
@@ -17,7 +17,7 @@ object SpaceUrls {
 
   fun revision(key: ProjectKey, repo: String, revision: String): String = p(key).revision(repo, revision).toUrl()
 
-  fun reviews(key: ProjectKey): String = p(key).reviews.toUrl()
+  fun reviews(key: ProjectKey): String = p(key).reviews().toUrl()
 
   fun review(key: ProjectKey, reviewNumber: Int): String = p(key).review(reviewNumber).toUrl()
 
@@ -28,8 +28,8 @@ object SpaceUrls {
 
   fun issues(key: ProjectKey): String = p(key).issues().toUrl()
 
-  fun fileAnnotate(key: ProjectKey, repo: String, hash: String, relativePath: String): String =
-    p(key).fileAnnotate(repo, hash, relativePath).toUrl()
+  fun fileAnnotate(key: ProjectKey, repo: String, hash: String, relativePath: String, selectedLine: Int? = null): String =
+    p(key).fileAnnotate(repo, hash, relativePath, selectedLine).toUrl()
 
   // member
   fun member(profile: TD_MemberProfile): String = member(profile.username)
@@ -48,7 +48,7 @@ object SpaceUrls {
   private fun im(): ChatsLocation = Navigator.im
 
   // manage
-  fun service(service: ES_Service): String = Navigator.manage.oauthServices.service(service).href
+  fun app(app: ES_App): String = Navigator.manage.apps.app(app).href
 
   private fun Location.toUrl(): String = absoluteHref(server())
 

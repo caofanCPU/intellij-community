@@ -82,7 +82,7 @@ public class GradleExtensionsSettings {
     public Map<String, GradleProject> projects = new HashMap<>();
 
     public void add(@NotNull String rootPath,
-                    @NotNull Collection<DataNode<GradleExtensions>> extensionsData) {
+                    @NotNull Collection<? extends DataNode<GradleExtensions>> extensionsData) {
       Map<String, GradleExtensions> extensionMap = new HashMap<>();
       for (DataNode<GradleExtensions> node : extensionsData) {
         DataNode<?> parent = node.getParent();
@@ -142,7 +142,6 @@ public class GradleExtensionsSettings {
           gradleTask.description = description.toString();
           extensionsData.tasksMap.put(gradleTask.name, gradleTask);
         }
-        extensionsData.tasks = new SmartList<>(extensionsData.tasksMap.values());
         for (org.jetbrains.plugins.gradle.model.GradleConfiguration configuration : gradleExtensions.getConfigurations()) {
           GradleConfiguration gradleConfiguration = new GradleConfiguration();
           gradleConfiguration.name = configuration.getName();
@@ -220,11 +219,6 @@ public class GradleExtensionsSettings {
     public final Map<String, GradleProp> properties = new HashMap<>();
     @NotNull
     public final Map<String, GradleTask> tasksMap = new LinkedHashMap<>();
-    /**
-     * @deprecated to be removed, use {@link GradleExtensionsData#tasksMap} instead
-     */
-    @Deprecated
-    public List<GradleTask> tasks = Collections.emptyList();
     @NotNull
     public final Map<String, GradleConfiguration> configurations = new HashMap<>();
     @NotNull

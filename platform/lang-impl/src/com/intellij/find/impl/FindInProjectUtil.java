@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.find.impl;
 
@@ -6,6 +6,7 @@ import com.intellij.find.*;
 import com.intellij.find.findInProject.FindInProjectManager;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
+import com.intellij.lang.LangBundle;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ReadAction;
@@ -49,8 +50,10 @@ import com.intellij.usages.UsageView;
 import com.intellij.usages.UsageViewPresentation;
 import com.intellij.util.PatternUtil;
 import com.intellij.util.Processor;
-import gnu.trove.THashSet;
-import org.jetbrains.annotations.*;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.PropertyKey;
 
 import javax.swing.*;
 import java.util.*;
@@ -131,15 +134,6 @@ public final class FindInProjectUtil {
     model.setProjectScope(model.getDirectoryName() == null && model.getModuleName() == null && !model.isCustomScope());
   }
 
-  /** @deprecated use {@link #getDirectory(FindModel)} */
-  @Deprecated
-  @Nullable
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  public static PsiDirectory getPsiDirectory(@NotNull FindModel findModel, @NotNull Project project) {
-    VirtualFile directory = getDirectory(findModel);
-    return directory == null ? null : PsiManager.getInstance(project).findDirectory(directory);
-  }
-
   @Nullable
   public static VirtualFile getDirectory(@NotNull FindModel findModel) {
     String directoryName = findModel.getDirectoryName();
@@ -199,27 +193,16 @@ public final class FindInProjectUtil {
     final String finalPattern = pattern;
     final String finalNegativePattern = negativePattern;
 
-    return new Condition<CharSequence>() {
+    return new Condition<>() {
       final Pattern regExp = Pattern.compile(finalPattern, Pattern.CASE_INSENSITIVE);
-      final Pattern negativeRegExp = StringUtil.isEmpty(finalNegativePattern) ? null : Pattern.compile(finalNegativePattern, Pattern.CASE_INSENSITIVE);
+      final Pattern negativeRegExp =
+        StringUtil.isEmpty(finalNegativePattern) ? null : Pattern.compile(finalNegativePattern, Pattern.CASE_INSENSITIVE);
+
       @Override
       public boolean value(CharSequence input) {
         return regExp.matcher(input).matches() && (negativeRegExp == null || !negativeRegExp.matcher(input).matches());
       }
     };
-  }
-
-  /**
-   * @deprecated Use {@link #findUsages(FindModel, Project, Processor, FindUsagesProcessPresentation)} instead. To remove in IDEA 16
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  public static void findUsages(@NotNull FindModel findModel,
-                                @Nullable final PsiDirectory psiDirectory,
-                                @NotNull final Project project,
-                                @NotNull final Processor<? super UsageInfo> consumer,
-                                @NotNull FindUsagesProcessPresentation processPresentation) {
-    findUsages(findModel, project, consumer, processPresentation);
   }
 
   public static void findUsages(@NotNull FindModel findModel,
@@ -367,7 +350,7 @@ public final class FindInProjectUtil {
       }
       presentation.setTabText(FindBundle.message("tab.title.files"));
       presentation.setToolwindowTitle(FindBundle.message("tab.title.files.in.scope", scope));
-      presentation.setUsagesString("files");
+      presentation.setUsagesString(LangBundle.message("files"));
     }
     else {
       FindModel.SearchContext searchContext = findModel.getSearchContext();
@@ -478,7 +461,7 @@ public final class FindInProjectUtil {
     }
   }
 
-  public static class StringUsageTarget implements ConfigurableUsageTarget, ItemPresentation, TypeSafeDataProvider {
+  public static class StringUsageTarget implements ConfigurableUsageTarget, ItemPresentation, DataProvider {
     @NotNull protected final Project myProject;
     @NotNull protected final FindModel myFindModel;
 
@@ -557,12 +540,13 @@ public final class FindInProjectUtil {
       return ActionManager.getInstance().getKeyboardShortcut("FindInPath");
     }
 
+    @Nullable
     @Override
-    public void calcData(@NotNull DataKey key, @NotNull DataSink sink) {
-      if (UsageView.USAGE_SCOPE.equals(key)) {
-        SearchScope scope = getScopeFromModel(myProject, myFindModel);
-        sink.put(UsageView.USAGE_SCOPE, scope);
+    public Object getData(@NotNull String dataId) {
+      if (UsageView.USAGE_SCOPE.is(dataId)) {
+        return getScopeFromModel(myProject, myFindModel);
       }
+      return null;
     }
   }
 
@@ -577,7 +561,7 @@ public final class FindInProjectUtil {
     String relativePath = VfsUtilCore.getRelativePath(directory, classRoot);
     if (relativePath == null) return;
 
-    Collection<VirtualFile> otherSourceRoots = new THashSet<>();
+    Collection<VirtualFile> otherSourceRoots = new HashSet<>();
 
     // if we are in the library sources, return (to search in this directory only)
     // otherwise, if we outside sources or in a jar directory, add directories from other source roots

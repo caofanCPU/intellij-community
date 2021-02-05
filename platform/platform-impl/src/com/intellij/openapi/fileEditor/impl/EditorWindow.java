@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl;
 
 import com.intellij.icons.AllIcons;
@@ -16,6 +16,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.ScrollingModel;
+import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.fileEditor.TextEditor;
@@ -27,12 +28,13 @@ import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.LayeredIcon;
 import com.intellij.ui.OnePixelSplitter;
-import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.ui.tabs.impl.JBTabsImpl;
 import com.intellij.ui.tabs.impl.tabsLayout.TabsLayoutInfo;
 import com.intellij.util.IconUtil;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.SlowOperations;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.Stack;
 import com.intellij.util.ui.EmptyIcon;
@@ -54,12 +56,14 @@ public final class EditorWindow {
   private static final Logger LOG = Logger.getInstance(EditorWindow.class);
 
   public static final DataKey<EditorWindow> DATA_KEY = DataKey.create("editorWindow");
+  public static final Key<Boolean> HIDE_TABS = Key.create("HIDE_TABS");
 
   JPanel myPanel;
   private final @NotNull EditorTabbedContainer myTabbedPane;
   @NotNull
   private final EditorsSplitters myOwner;
 
+  private boolean alwaysHideTabs;
   private boolean myIsDisposed;
   public static final Key<Integer> INITIAL_INDEX_KEY = Key.create("initial editor index");
   // Metadata to support editor tab drag&drop process: initial index
@@ -68,7 +72,7 @@ public final class EditorWindow {
   public static final Key<Integer> DRAG_START_LOCATION_HASH_KEY = KeyWithDefaultValue.create("drag start editor location hash", 0);
   // Metadata to support editor tab drag&drop process: initial 'pinned' state
   public static final Key<Boolean> DRAG_START_PINNED_KEY = Key.create("drag start editor pinned state");
-  private final Stack<Pair<String, FileEditorOpenOptions>> myRemovedTabs = new Stack<Pair<String, FileEditorOpenOptions>>() {
+  private final Stack<Pair<String, FileEditorOpenOptions>> myRemovedTabs = new Stack<>() {
     @Override
     public void push(Pair<String, FileEditorOpenOptions> pair) {
       if (size() >= getTabLimit()) {
@@ -99,11 +103,18 @@ public final class EditorWindow {
     if (myOwner.getCurrentWindow() == null) {
       myOwner.setCurrentWindow(this, false);
     }
+    updateTabsVisibility();
+  }
+
+  void updateTabsVisibility() {
     updateTabsVisibility(UISettings.getInstance());
   }
 
   void updateTabsVisibility(@NotNull UISettings settings) {
-    myTabbedPane.getTabs().getPresentation().setHideTabs(settings.getEditorTabPlacement() == UISettings.TABS_NONE || settings.getPresentationMode());
+    myTabbedPane.getTabs().getPresentation()
+      .setHideTabs(myOwner.isFloating() && alwaysHideTabs
+                   || settings.getEditorTabPlacement() == UISettings.TABS_NONE
+                   || settings.getPresentationMode());
   }
 
   public boolean isShowing() {
@@ -310,12 +321,8 @@ public final class EditorWindow {
     myTabbedPane.setForegroundAt(index, color);
   }
 
-  void setStyleAt(int index, @SimpleTextAttributes.StyleAttributeConstant int style) {
-    myTabbedPane.setStyleAt(index, style);
-  }
-
-  void setWaveColor(int index, @Nullable Color color) {
-    myTabbedPane.setWaveColor(index, color);
+  void setTextAttributes(int index, @Nullable TextAttributes attributes) {
+    myTabbedPane.setTextAttributes(index, attributes);
   }
 
   private void setTitleAt(int index, @NlsContexts.TabTitle @NotNull String text) {
@@ -558,10 +565,27 @@ public final class EditorWindow {
         myOwner.updateFileIconLater(file);
         myOwner.updateFileColor(file);
       }
-      myOwner.updateFileStyle(editor.getFile());
+      myOwner.updateFileColor(editor.getFile());
       myOwner.setCurrentWindow(this, false);
+      hideTabsIfNeeded(editor);
     }
     myOwner.validate();
+  }
+
+  private void hideTabsIfNeeded(@NotNull EditorWithProviderComposite editor) {
+    alwaysHideTabs = false; //default state
+
+    if (myOwner.isFloating()) {
+      boolean hideTabs = needHideTabs(editor.getEditors());
+      if (hideTabs) {
+        alwaysHideTabs = true;
+        updateTabsVisibility();
+      }
+    }
+  }
+
+  private static boolean needHideTabs(@NotNull FileEditor @NotNull [] editors) {
+    return ContainerUtil.exists(editors, e -> HIDE_TABS.isIn(e) && HIDE_TABS.get(e).booleanValue());
   }
 
   private boolean splitAvailable() {
@@ -597,6 +621,7 @@ public final class EditorWindow {
       myPanel.setOpaque(false);
 
       Splitter splitter = new OnePixelSplitter(orientation == JSplitPane.VERTICAL_SPLIT, 0.5f, 0.1f, 0.9f);
+      splitter.putClientProperty(EditorsSplitters.SPLITTER_KEY, Boolean.TRUE);
       EditorWindow res = new EditorWindow(myOwner, myOwner.parentDisposable);
       EditorWithProviderComposite selectedEditor = getSelectedEditor();
       panel.remove(myTabbedPane.getComponent());
@@ -609,7 +634,8 @@ public final class EditorWindow {
       myPanel.add(myTabbedPane.getComponent(), BorderLayout.CENTER);
       if (fileIsSecondaryComponent) {
         splitter.setSecondComponent(res.myPanel);
-      } else {
+      }
+      else {
         splitter.setFirstComponent(res.myPanel);
       }
       // open only selected file in the new splitter instead of opening all tabs
@@ -719,17 +745,6 @@ public final class EditorWindow {
     }
   }
 
-  private void updateFileIconDecoration(@NotNull VirtualFile file) {
-    EditorWithProviderComposite composite = Objects.requireNonNull(findFileComposite(file));
-    int index = findEditorIndex(composite);
-    LOG.assertTrue(index != -1);
-    Icon current = myTabbedPane.getIconAt(index);
-    if (current instanceof DecoratedTabIcon) {
-      current = ((DecoratedTabIcon)current).fileIcon;
-    }
-    myTabbedPane.setIconAt(index, decorateFileIcon(composite, current));
-  }
-
   void updateFileIcon(@NotNull VirtualFile file, @NotNull Icon icon) {
     EditorWithProviderComposite composite = findFileComposite(file);
     if (composite == null) return;
@@ -741,7 +756,9 @@ public final class EditorWindow {
   void updateFileName(@NotNull VirtualFile file) {
     int index = findEditorIndex(findFileComposite(file));
     if (index != -1) {
-      setTitleAt(index, EditorTabPresentationUtil.getEditorTabTitle(getManager().getProject(), file, this));
+      setTitleAt(index, SlowOperations.allowSlowOperations(
+        () -> EditorTabPresentationUtil.getEditorTabTitle(getManager().getProject(), file, this)
+      ));
       setToolTipTextAt(index, UISettings.getInstance().getShowTabsTooltips()
                               ? getManager().getFileTooltipText(file)
                               : null);
@@ -752,17 +769,17 @@ public final class EditorWindow {
    * @return baseIcon augmented with pin/modification status
    */
   private static Icon decorateFileIcon(@NotNull EditorComposite composite, @NotNull Icon baseIcon) {
-    Icon modifiedIcon;
     UISettings settings = UISettings.getInstance();
-    if (settings.getMarkModifiedTabsWithAsterisk()) {
-      Icon crop = IconUtil.cropIcon(AllIcons.General.Modified, new JBRectangle(3, 3, 7, 7));
-      modifiedIcon = settings.getMarkModifiedTabsWithAsterisk() && composite.isModified() ? crop : new EmptyIcon(7, 7);
-      DecoratedTabIcon result = new DecoratedTabIcon(2, baseIcon);
-      result.setIcon(baseIcon, 0);
-      result.setIcon(modifiedIcon, 1, -modifiedIcon.getIconWidth() / 2, 0);
-      return JBUIScale.scaleIcon(result);
+    if (!settings.getMarkModifiedTabsWithAsterisk()) {
+      return baseIcon;
     }
-    return baseIcon;
+
+    Icon crop = IconUtil.cropIcon(AllIcons.General.Modified, new JBRectangle(3, 3, 7, 7));
+    Icon modifiedIcon = settings.getMarkModifiedTabsWithAsterisk() && composite.isModified() ? crop : EmptyIcon.create(7, 7);
+    DecoratedTabIcon result = new DecoratedTabIcon(2, baseIcon);
+    result.setIcon(baseIcon, 0);
+    result.setIcon(modifiedIcon, 1, -modifiedIcon.getIconWidth() / 2, 0);
+    return JBUIScale.scaleIcon(result);
   }
 
   private static class DecoratedTabIcon extends LayeredIcon {
@@ -922,6 +939,10 @@ public final class EditorWindow {
     }
     boolean wasPinned = editorComposite.isPinned();
     editorComposite.setPinned(pinned);
+    if (editorComposite.isPreview()) {
+      editorComposite.setPreview(false);
+      myOwner.updateFileColor(file);
+    }
     if (wasPinned != pinned && ApplicationManager.getApplication().isDispatchThread()) {
       ObjectUtils.consumeIfCast(getTabbedPane().getTabs(), JBTabsImpl.class, JBTabsImpl::doLayout);
     }

@@ -646,6 +646,8 @@ final class LockFreeCopyOnWriteArrayList<E> extends AtomicReference<Object @NotN
   public boolean addAll(@NotNull Collection<? extends E> c) {
     if (c.isEmpty()) return false;
     Object[] cs = c.toArray();
+    //could still be empty for concurrent collection
+    //noinspection ConstantConditions
     if (cs.length == 0) {
       return false;
     }
@@ -918,5 +920,11 @@ final class LockFreeCopyOnWriteArrayList<E> extends AtomicReference<Object @NotN
   @Override
   public @NotNull List<E> subList(int fromIndex, int toIndex) {
     throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public Spliterator<E> spliterator() {
+    //noinspection unchecked
+    return (Spliterator<E>)Arrays.spliterator(get());
   }
 }

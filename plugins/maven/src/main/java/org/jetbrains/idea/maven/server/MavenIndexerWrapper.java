@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.maven.server;
 
+import com.intellij.openapi.project.Project;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import org.apache.lucene.search.Query;
@@ -22,23 +23,28 @@ import java.util.Set;
 
 public abstract class MavenIndexerWrapper extends MavenRemoteObjectWrapper<MavenServerIndexer> {
   private final Int2ObjectOpenHashMap<IndexData> myDataMap = new Int2ObjectOpenHashMap<>();
+  private final Project myProject;
 
-  public MavenIndexerWrapper(@Nullable RemoteObjectWrapper<?> parent) {
+  public MavenIndexerWrapper(@Nullable RemoteObjectWrapper<?> parent, Project project) {
     super(parent);
+    myProject = project;
   }
 
   @Override
   protected synchronized void onError() {
     super.onError();
     MavenLog.LOG.debug("MavenIndexerWrapper on error:");
-    for (IntIterator iterator = myDataMap.keySet().iterator(); iterator.hasNext(); ) {
-      int each = iterator.nextInt();
-      MavenLog.LOG.debug("clear remote id for " + each);
-      myDataMap.get(each).remoteId = -1;
+    synchronized (myDataMap){
+      for (IntIterator iterator = myDataMap.keySet().iterator(); iterator.hasNext(); ) {
+        int each = iterator.nextInt();
+        MavenLog.LOG.debug("clear remote id for " + each);
+        myDataMap.get(each).remoteId = -1;
+      }
     }
+
   }
 
-  public synchronized int createIndex(@NotNull final String indexId,
+  public int createIndex(@NotNull final String indexId,
                                       @NotNull final String repositoryId,
                                       @Nullable final File file,
                                       @Nullable final String url,
@@ -46,16 +52,23 @@ public abstract class MavenIndexerWrapper extends MavenRemoteObjectWrapper<Maven
     IndexData data = new IndexData(indexId, repositoryId, file, url, indexDir);
     final int localId = System.identityHashCode(data);
     MavenLog.LOG.debug("addIndex " + localId);
-    myDataMap.put(localId, data);
+    synchronized (myDataMap){
+      myDataMap.put(localId, data);
+    }
+
 
     perform(() -> getRemoteId(localId));
 
     return localId;
   }
 
-  public synchronized void releaseIndex(int localId) throws MavenServerIndexerException {
+  public void releaseIndex(int localId) throws MavenServerIndexerException {
     MavenLog.LOG.debug("releaseIndex " + localId);
-    IndexData data = myDataMap.remove(localId);
+    IndexData data = null;
+    synchronized (myDataMap){
+      data = myDataMap.remove(localId);
+    }
+
     if (data == null) {
       MavenLog.LOG.warn("index " + localId + " not found");
       return;
@@ -75,7 +88,7 @@ public abstract class MavenIndexerWrapper extends MavenRemoteObjectWrapper<Maven
     }
   }
 
-  public synchronized boolean indexExists(File dir) {
+  public boolean indexExists(File dir) {
     try {
       return getOrCreateWrappee().indexExists(dir, ourToken);
     }
@@ -96,7 +109,7 @@ public abstract class MavenIndexerWrapper extends MavenRemoteObjectWrapper<Maven
     performCancelable(() -> {
       MavenServerProgressIndicator indicatorWrapper = wrapAndExport(indicator);
       try {
-        getOrCreateWrappee().updateIndex(getRemoteId(localId), MavenServerManager.convertSettings(settings), indicatorWrapper, ourToken);
+        getOrCreateWrappee().updateIndex(getRemoteId(localId), MavenServerManager.convertSettings(myProject, settings), indicatorWrapper, ourToken);
       }
       finally {
         UnicastRemoteObject.unexportObject(indicatorWrapper, true);
@@ -126,8 +139,12 @@ public abstract class MavenIndexerWrapper extends MavenRemoteObjectWrapper<Maven
     return perform(() -> getOrCreateWrappee().search(getRemoteId(localId), query, maxResult, ourToken));
   }
 
-  private synchronized int getRemoteId(int localId) throws RemoteException, MavenServerIndexerException {
-    IndexData result = myDataMap.get(localId);
+  private int getRemoteId(int localId) throws RemoteException, MavenServerIndexerException {
+    IndexData result = null;
+    synchronized (myDataMap){
+      result = myDataMap.get(localId);
+    }
+
     if(result == null) {
       MavenLog.LOG.error("index " + localId + " not found, known ids are:" + myDataMap.keySet());
     }

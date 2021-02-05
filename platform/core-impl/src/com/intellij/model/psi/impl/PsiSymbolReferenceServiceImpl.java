@@ -1,9 +1,8 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.model.psi.impl;
 
 import com.intellij.model.psi.*;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.ReferenceRange;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiModificationTracker;
@@ -83,9 +82,9 @@ final class PsiSymbolReferenceServiceImpl implements PsiSymbolReferenceService {
       result = ContainerUtil.filterIsInstance(result, referenceClass);
     }
 
-    Integer offsetInElement = hints.getOffsetInElement();
-    if (offsetInElement != null) {
-      result = ContainerUtil.filter(result, it -> ReferenceRange.containsOffsetInElement(it, offsetInElement));
+    int offsetInElement = hints.getOffsetInElement();
+    if (offsetInElement >= 0) {
+      result = ContainerUtil.filter(result, it -> it.getRangeInElement().containsOffset(offsetInElement));
     }
     // consider checking SymbolReference.resolvesTo(target) here if all needed
     return result;

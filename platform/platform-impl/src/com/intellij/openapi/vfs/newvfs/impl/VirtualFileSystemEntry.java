@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.impl.ApplicationInfoImpl;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.fileTypes.FileType.CharsetHint.ForcedCharset;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
@@ -17,6 +16,7 @@ import com.intellij.openapi.vfs.newvfs.NewVirtualFile;
 import com.intellij.openapi.vfs.newvfs.NewVirtualFileSystem;
 import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS;
 import com.intellij.openapi.vfs.newvfs.persistent.PersistentFSImpl;
+import com.intellij.util.ExceptionUtil;
 import com.intellij.util.LocalTimeCounter;
 import com.intellij.util.text.CharArrayUtil;
 import org.intellij.lang.annotations.MagicConstant;
@@ -372,7 +372,7 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
     if (isValid()) {
       return getUrl();
     }
-    String reason = getUserData(DebugInvalidation.INVALIDATION_REASON);
+    String reason = getInvalidationInfo();
     return getUrl() + " (invalid" + (reason == null ? "" : ", reason: "+reason) + ")";
   }
 
@@ -409,6 +409,7 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
   private static class DebugInvalidation {
     private static final boolean DEBUG = ApplicationManager.getApplication().isUnitTestMode() || ApplicationManager.getApplication().isInternal();
     private static final Key<String> INVALIDATION_REASON = Key.create("INVALIDATION_REASON");
+    private static final Key<Throwable> INVALIDATION_TRACE = Key.create("INVALIDATION_TRACE");
   }
 
   @ApiStatus.Internal
@@ -422,8 +423,19 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
     if (DebugInvalidation.DEBUG && !ApplicationInfoImpl.isInStressTest()) {
       String oldReason = getUserData(DebugInvalidation.INVALIDATION_REASON);
       String newReason = source + ": " + reason;
+      if (oldReason == null) {
+        putUserData(DebugInvalidation.INVALIDATION_TRACE, new Throwable());
+      }
       putUserData(DebugInvalidation.INVALIDATION_REASON, oldReason == null ? newReason : oldReason + "; " + newReason);
     }
+  }
+
+  private String getInvalidationInfo() {
+    String reason = getUserData(DebugInvalidation.INVALIDATION_REASON);
+    if (reason == null) return null;
+    Throwable trace = getUserData(DebugInvalidation.INVALIDATION_TRACE);
+    if (trace == null) return reason;
+    return reason + "; stacktrace:\n" + ExceptionUtil.getThrowableText(trace);
   }
 
   @NotNull
@@ -447,18 +459,12 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
         return super.getCharset();
       }
       try {
-        FileType.CharsetHint charsetHint = fileType.getCharsetHint();
-        if (charsetHint instanceof ForcedCharset) {
-          charset = ((ForcedCharset)charsetHint).getCharset();
+        byte[] content = VfsUtilCore.loadBytes(this);
+        if (isCharsetSet()) {
+          // loadBytes() may have cached the charset (see VirtualFileImpl.contentsToByteArray(boolean))
+          return super.getCharset();
         }
-        else {
-          byte[] content = VfsUtilCore.loadBytes(this);
-          if (isCharsetSet()) {
-            // loadBytes() may have cached the charset (see VirtualFileImpl.contentsToByteArray(boolean))
-            return super.getCharset();
-          }
-          charset = LoadTextUtil.detectCharsetAndSetBOM(this, content, fileType);
-        }
+        charset = LoadTextUtil.detectCharsetAndSetBOM(this, content, fileType);
       }
       catch (IOException e) {
         return super.getCharset();

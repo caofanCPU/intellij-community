@@ -40,6 +40,7 @@ import com.intellij.psi.scope.processor.VariablesProcessor;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.refactoring.JavaRefactoringSettings;
 import com.intellij.refactoring.RefactoringActionHandler;
@@ -249,8 +250,9 @@ public class JavaVariableInplaceIntroducer extends AbstractJavaInplaceIntroducer
   @Override
   @Nullable
   protected JComponent getComponent() {
-    if (getVariable() instanceof PsiPatternVariable) return null;
-    if (myCantChangeFinalModifier && !(myCanBeVarType && getVariable() instanceof PsiLocalVariable)) return null;
+    final PsiVariable variable = getVariable();
+    if (variable instanceof PsiPatternVariable && !PsiUtil.isLanguageLevel16OrHigher(variable)) return null;
+    if (myCantChangeFinalModifier && !(myCanBeVarType && variable instanceof PsiLocalVariable)) return null;
     if (!myCantChangeFinalModifier) {
       myCanBeFinalCb = new NonFocusableCheckBox(JavaRefactoringBundle.message("declare.final"));
       myCanBeFinalCb.setSelected(createFinals());
@@ -270,7 +272,7 @@ public class JavaVariableInplaceIntroducer extends AbstractJavaInplaceIntroducer
       });
     }
 
-    if (myCanBeVarType && getVariable() instanceof PsiLocalVariable) {
+    if (myCanBeVarType && variable instanceof PsiLocalVariable) {
       myCanBeVarTypeCb = new NonFocusableCheckBox(JavaRefactoringBundle.message("declare.var.type"));
       myCanBeVarTypeCb.setSelected(IntroduceVariableBase.createVarType());
       myCanBeVarTypeCb.addActionListener(new ActionListener() {
@@ -368,7 +370,8 @@ public class JavaVariableInplaceIntroducer extends AbstractJavaInplaceIntroducer
             final PsiExpression initializer = psiVariable.getInitializer();
             LOG.assertTrue(initializer != null);
             final PsiType type = initializer.getType();
-            if (((PsiReferenceExpression)parent).resolve() == null && type != null && !type.equals(psiVariable.getType())) {
+            if (((PsiReferenceExpression)parent).resolve() == null && type != null && !type.equals(psiVariable.getType()) &&
+                !LambdaUtil.notInferredType(type) && !PsiType.NULL.equals(type)) {
               final PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(project);
               final PsiExpression castedExpr =
                 elementFactory.createExpressionFromText("((" + type.getCanonicalText() + ")" + referenceExpression.getText() + ")", parent);

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.popup;
 
 import com.intellij.codeInsight.hint.HintUtil;
@@ -13,6 +13,8 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
+import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
+import com.intellij.openapi.actionSystem.impl.AutoPopupSupportingListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.TransactionGuard;
@@ -534,13 +536,16 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
     return location;
   }
 
-  private Dimension getSizeForPositioning() {
+  public Dimension getSizeForPositioning() {
     Dimension size = getSize();
     if (size == null) {
       size = getStoredSize();
     }
     if (size == null) {
-      size = myContent.getPreferredSize();
+      Dimension contentPreferredSize = myContent.getPreferredSize();
+      Dimension titlePreferredSize = getTitle().getPreferredSize();
+      size = new JBDimension(Math.max(contentPreferredSize.width, titlePreferredSize.width),
+                             contentPreferredSize.height + titlePreferredSize.height, true);
     }
     return size;
   }
@@ -554,7 +559,7 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
     // Set the accessible parent so that screen readers don't announce
     // a window context change -- the tooltip is "logically" hosted
     // inside the component (e.g. editor) it appears on top of.
-    AccessibleContextUtil.setParent((Component)myComponent, editor.getContentComponent());
+    AccessibleContextUtil.setParent(myComponent, editor.getContentComponent());
     show(getBestPositionFor(editor));
   }
 
@@ -659,7 +664,7 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
     return rectangle.getLocation();
   }
 
-  private @NotNull Dimension getPreferredContentSize() {
+  public @NotNull Dimension getPreferredContentSize() {
     if (myForcedSize != null) {
       return myForcedSize;
     }
@@ -877,6 +882,13 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
 
     if (myMouseOutCanceller != null) {
       myMouseOutCanceller.myEverEntered = targetBounds.equals(original);
+    }
+
+    // prevent hiding of a floating toolbar
+    Point pointOnOwner = new Point(aScreenX, aScreenY);
+    SwingUtilities.convertPointFromScreen(pointOnOwner, owner);
+    if (ActionToolbarImpl.isInPopupToolbar(SwingUtilities.getDeepestComponentAt(owner, pointOnOwner.x, pointOnOwner.y))) {
+      AutoPopupSupportingListener.installOn(this);
     }
 
     myOwner = getFrameOrDialog(owner); // use correct popup owner for non-modal dialogs too
@@ -1381,9 +1393,6 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
         }
       }
     }
-
-    size.height += getAdComponentHeight();
-
     final Window window = getContentWindow(myContent);
     if (window != null) {
       window.setSize(size);
@@ -1521,15 +1530,6 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer {
 
   public static class MyContentPanel extends JPanel implements DataProvider {
     private @Nullable DataProvider myDataProvider;
-
-    /**
-     * @deprecated use {@link MyContentPanel#MyContentPanel(PopupBorder)}
-     */
-    @Deprecated
-    public MyContentPanel(final boolean resizable, final PopupBorder border, boolean drawMacCorner) {
-      this(border);
-      DeprecatedMethodException.report("Use com.intellij.ui.popup.AbstractPopup.MyContentPanel.MyContentPanel(com.intellij.ui.PopupBorder) instead");
-    }
 
     public MyContentPanel(@NotNull PopupBorder border) {
       super(new BorderLayout());

@@ -4,6 +4,7 @@ package com.intellij.openapi.vfs.newvfs.persistent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.util.ExceptionUtil;
+import com.intellij.util.FlushingDaemon;
 import com.intellij.util.hash.ContentHashEnumerator;
 import com.intellij.util.io.*;
 import com.intellij.util.io.storage.*;
@@ -50,13 +51,13 @@ final class PersistentFSConnection {
   private boolean myCorrupted;
 
   PersistentFSConnection(@NotNull PersistentFSPaths paths,
-                         PersistentFSRecordsStorage records,
+                         @NotNull PersistentFSRecordsStorage records,
                          @NotNull PersistentStringEnumerator names,
                          @NotNull Storage attributes,
                          @NotNull RefCountingStorage contents,
                          @Nullable ContentHashEnumerator contentHashesEnumerator,
                          @NotNull IntList freeRecords,
-                         boolean markDirty) throws IOException {
+                         boolean markDirty) {
     myRecords = records;
     myNames = names;
     myAttributes = attributes;
@@ -145,13 +146,12 @@ final class PersistentFSConnection {
     }  // No luck.
   }
 
-  int getGlobalModCount() {
+  int getPersistentModCount() {
     return myRecords.getGlobalModCount();
   }
 
   int incGlobalModCount() {
     incLocalModCount();
-
     return myRecords.incGlobalModCount();
   }
 
@@ -216,6 +216,11 @@ final class PersistentFSConnection {
   @NotNull
   PersistentFSPaths getPersistentFSPaths() {
     return myPersistentFSPaths;
+  }
+
+  public void incModCount(int fileId) {
+    int count = incGlobalModCount();
+    getRecords().setModCount(fileId, count);
   }
 
   static void closeStorages(@Nullable PersistentFSRecordsStorage records,
@@ -284,5 +289,12 @@ final class PersistentFSConnection {
     public int calculateCapacity(int requiredLength) {   // 20% for growth
       return Math.max(myAttrPageRequested ? 8 : 32, Math.min((int)(requiredLength * 1.2), (requiredLength / 1024 + 1) * 1024));
     }
+  }
+
+  /**
+   * @param id - file id, name id, any other positive id
+   */
+  static void ensureIdIsValid(int id) {
+    assert id > 0 : id;
   }
 }

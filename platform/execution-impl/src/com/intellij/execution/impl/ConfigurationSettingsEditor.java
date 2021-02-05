@@ -11,6 +11,7 @@ import com.intellij.execution.configurations.RunnerSettings;
 import com.intellij.execution.executors.ExecutorGroup;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.execution.ui.AdjustingTabSettingsEditor;
+import com.intellij.execution.ui.TargetAwareRunConfigurationEditor;
 import com.intellij.openapi.options.*;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.NlsContexts.TabTitle;
@@ -35,7 +36,7 @@ import java.util.*;
 import java.util.function.Function;
 
 public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerAndConfigurationSettings> {
-  private final ArrayList<SettingsEditor<RunnerAndConfigurationSettings>> myRunnerEditors = new ArrayList<>();
+  private final List<SettingsEditor<RunnerAndConfigurationSettings>> myRunnerEditors = new ArrayList<>();
   private final Map<ProgramRunner, List<SettingsEditor>> myRunner2UnwrappedEditors = new HashMap<>();
   private RunnersEditorComponent myRunnersComponent;
   private final RunConfiguration myConfiguration;
@@ -44,7 +45,7 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
   private GroupSettingsBuilder<RunnerAndConfigurationSettings> myGroupSettingsBuilder;
 
   @Override
-  public CompositeSettingsBuilder<RunnerAndConfigurationSettings> getBuilder() {
+  public @NotNull CompositeSettingsBuilder<RunnerAndConfigurationSettings> getBuilder() {
     init();
     myGroupSettingsBuilder = new GroupSettingsBuilder<>(myCompound);
     return myGroupSettingsBuilder;
@@ -81,17 +82,17 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
 
       if (myRunnerEditors.size() > 0) {
         myCompound.addEditor(getRunnersTabName(),
-                             new CompositeSettingsEditor<RunnerAndConfigurationSettings>(getFactory()) {
+                             new CompositeSettingsEditor<>(getFactory()) {
                                @Override
-                               public CompositeSettingsBuilder<RunnerAndConfigurationSettings> getBuilder() {
-                                 return new CompositeSettingsBuilder<RunnerAndConfigurationSettings>() {
+                               public @NotNull CompositeSettingsBuilder<RunnerAndConfigurationSettings> getBuilder() {
+                                 return new CompositeSettingsBuilder<>() {
                                    @Override
-                                   public Collection<SettingsEditor<RunnerAndConfigurationSettings>> getEditors() {
+                                   public @NotNull Collection<SettingsEditor<RunnerAndConfigurationSettings>> getEditors() {
                                      return myRunnerEditors;
                                    }
 
                                    @Override
-                                   public JComponent createCompoundEditor() {
+                                   public @NotNull JComponent createCompoundEditor() {
                                      return myRunnersComponent.getComponent();
                                    }
                                  };
@@ -222,6 +223,14 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
     return settings;
   }
 
+  public void targetChanged(String targetName) {
+    for (SettingsEditor<RunnerAndConfigurationSettings> editor : myEditors) {
+      if (editor instanceof TargetAwareRunConfigurationEditor) {
+        ((TargetAwareRunConfigurationEditor)editor).targetChanged(targetName);
+      }
+    }
+  }
+
   private static final class RunnersEditorComponent {
     @NonNls private static final String NO_RUNNER_COMPONENT = "<NO RUNNER LABEL>";
 
@@ -278,7 +287,8 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
     }
   }
 
-  private class ConfigToSettingsWrapper extends SettingsEditor<RunnerAndConfigurationSettings> {
+  private class ConfigToSettingsWrapper extends SettingsEditor<RunnerAndConfigurationSettings>
+    implements TargetAwareRunConfigurationEditor {
     private final SettingsEditor<RunConfiguration> myConfigEditor;
 
     ConfigToSettingsWrapper(SettingsEditor<RunConfiguration> configEditor) {
@@ -340,6 +350,13 @@ public class ConfigurationSettingsEditor extends CompositeSettingsEditor<RunnerA
     @Override
     public void disposeEditor() {
       Disposer.dispose(myConfigEditor);
+    }
+
+    @Override
+    public void targetChanged(String targetName) {
+      if (myConfigEditor instanceof TargetAwareRunConfigurationEditor) {
+        ((TargetAwareRunConfigurationEditor)myConfigEditor).targetChanged(targetName);
+      }
     }
   }
 

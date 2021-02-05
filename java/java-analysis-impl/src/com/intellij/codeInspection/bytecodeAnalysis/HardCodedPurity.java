@@ -1,7 +1,6 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.bytecodeAnalysis;
 
-import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.ContainerUtil;
@@ -15,9 +14,6 @@ import java.util.Set;
 class HardCodedPurity {
   static final boolean AGGRESSIVE_HARDCODED_PURITY = Registry.is("java.annotations.inference.aggressive.hardcoded.purity", true);
 
-  private static final Set<Couple<String>> ownedFields = Collections.singleton(
-    new Couple<>("java/lang/AbstractStringBuilder", "value")
-  );
   private static final Set<Member> thisChangingMethods = ContainerUtil.set(
     new Member("java/lang/Throwable", "fillInStackTrace", "()Ljava/lang/Throwable;")
   );
@@ -104,7 +100,7 @@ class HardCodedPurity {
   }
 
   boolean isOwnedField(FieldInsnNode fieldInsn) {
-    return ownedFields.contains(new Couple<>(fieldInsn.owner, fieldInsn.name));
+    return fieldInsn.owner.equals("java/lang/AbstractStringBuilder") && fieldInsn.name.equals("value");
   }
 
   static class AggressiveHardCodedPurity extends HardCodedPurity {
@@ -116,6 +112,11 @@ class HardCodedPurity {
     @Override
     boolean isThisChangingMethod(Member method) {
       if (method.methodName.equals("next") && method.methodDesc.startsWith("()") && method.internalClassName.equals("java/util/Iterator")) {
+        return true;
+      }
+      if (method.methodName.equals("initCause") && method.methodDesc.equals("(Ljava/lang/Throwable;)Ljava/lang/Throwable;") &&
+          method.internalClassName.startsWith("java/")) {
+        // Throwable.initCause is overridable. For Java classes, we assume that its contract is fixed 
         return true;
       }
       return super.isThisChangingMethod(method);

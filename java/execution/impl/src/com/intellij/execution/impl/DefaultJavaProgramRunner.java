@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.impl;
 
 import com.intellij.debugger.engine.JavaDebugProcess;
@@ -43,6 +43,7 @@ import com.intellij.unscramble.ThreadDumpConsoleFactory;
 import com.intellij.unscramble.ThreadDumpParser;
 import com.intellij.unscramble.ThreadState;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.messages.MessageBusConnection;
@@ -112,9 +113,9 @@ public class DefaultJavaProgramRunner implements JvmPatchableProgramRunner<Runne
       });
     }
     else {
-      executionManager.startRunProfile(environment, currentState, (ignored) -> {
+      executionManager.startRunProfile(environment, currentState, (ignored) -> SlowOperations.allowSlowOperations(() -> {
         return doExecute(currentState, environment);
-      });
+      }));
     }
   }
 
@@ -153,10 +154,6 @@ public class DefaultJavaProgramRunner implements JvmPatchableProgramRunner<Runne
     throws ExecutionException {
     FileDocumentManager.getInstance().saveAllDocuments();
 
-    if (state instanceof JavaCommandLine) {
-      patchJavaCommandLineParams((JavaCommandLine)state, env);
-    }
-
     if (!isExecutorSupportedOnTarget(env)) {
       throw new ExecutionException(
         ExecutionBundle.message("run.configuration.action.is.supported.for.local.machine.only", env.getExecutor().getActionName())
@@ -164,6 +161,10 @@ public class DefaultJavaProgramRunner implements JvmPatchableProgramRunner<Runne
     }
 
     return state.prepareTargetToCommandExecution(env, LOG, "Failed to execute java run configuration async", () -> {
+      if (state instanceof JavaCommandLine) {
+        patchJavaCommandLineParams((JavaCommandLine)state, env);
+      }
+
       return executeJavaState(state, env, null);
     });
   }

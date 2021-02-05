@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.find.findUsages;
 
@@ -12,10 +12,8 @@ import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.navigation.NavigationItem;
 import com.intellij.navigation.PsiElementNavigationItem;
-import com.intellij.openapi.actionSystem.DataKey;
-import com.intellij.openapi.actionSystem.DataSink;
+import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
-import com.intellij.openapi.actionSystem.TypeSafeDataProvider;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.project.Project;
@@ -38,13 +36,14 @@ import com.intellij.usages.UsageView;
 import com.intellij.usages.impl.UsageViewImpl;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.ArrayList;
 import java.util.Collection;
 
 public class PsiElement2UsageTargetAdapter
-  implements PsiElementUsageTarget, TypeSafeDataProvider, PsiElementNavigationItem, ItemPresentation, ConfigurableUsageTarget {
+  implements PsiElementUsageTarget, DataProvider, PsiElementNavigationItem, ItemPresentation, ConfigurableUsageTarget {
   private final SmartPsiElementPointer<?> myPointer;
   @NotNull protected final FindUsagesOptions myOptions;
   private String myPresentableText;
@@ -188,17 +187,19 @@ public class PsiElement2UsageTargetAdapter
     return targets;
   }
 
+  @Nullable
   @Override
-  public void calcData(@NotNull final DataKey key, @NotNull final DataSink sink) {
-    if (key == UsageView.USAGE_INFO_KEY) {
+  public Object getData(@NotNull String dataId) {
+    if (UsageView.USAGE_INFO_KEY.is(dataId)) {
       PsiElement element = getElement();
       if (element != null && element.getTextRange() != null) {
-        sink.put(UsageView.USAGE_INFO_KEY, new UsageInfo(element));
+        return new UsageInfo(element);
       }
     }
-    else if (key == UsageView.USAGE_SCOPE) {
-      sink.put(UsageView.USAGE_SCOPE, myOptions.searchScope);
+    else if (UsageView.USAGE_SCOPE.is(dataId)) {
+      return myOptions.searchScope;
     }
+    return null;
   }
 
   @Override
@@ -264,11 +265,6 @@ public class PsiElement2UsageTargetAdapter
   @Override
   public String getPresentableText() {
     return myPresentableText;
-  }
-
-  @Override
-  public String getLocationString() {
-    return null;
   }
 
   @Override

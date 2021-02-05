@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build
 
 import com.intellij.openapi.util.io.FileUtil
@@ -89,7 +89,12 @@ final class CommunityRepositoryModules {
     "intellij.platform.debugger.impl",
     "intellij.platform.configurationStore.impl",
     "intellij.platform.serviceContainer",
-    "intellij.platform.objectSerializer"
+    "intellij.platform.objectSerializer",
+    "intellij.platform.diagnostic",
+    "intellij.platform.core.ui",
+    "intellij.platform.credentialStore",
+    "intellij.platform.rd.community",
+    "intellij.platform.ml.impl"
   ]
 
   /**
@@ -123,6 +128,9 @@ final class CommunityRepositoryModules {
     plugin("intellij.properties.resource.bundle.editor"),
     plugin("intellij.vcs.git") {
       withModule("intellij.vcs.git.rt", "git4idea-rt.jar", null)
+    },
+    plugin("intellij.vcs.svn"){
+      withProjectLibrary("sqlite")
     },
     plugin("intellij.xpath") {
       withModule("intellij.xpath.rt", "rt/xslt-rt.jar")
@@ -187,10 +195,11 @@ final class CommunityRepositoryModules {
     },
     plugin("intellij.externalSystem.dependencyUpdater"),
     plugin("intellij.gradle.dependencyUpdater"),
-    plugin("intellij.gradle.dsl.impl") {
-      withModule("intellij.gradle.dsl")
+    plugin("intellij.android.gradle.dsl") {
+      withModule("intellij.android.gradle.dsl")
+      withModule("intellij.android.gradle.dsl.kotlin.impl")
+      withModule("intellij.android.gradle.dsl.impl")
     },
-    plugin("intellij.gradle.dsl.kotlin.impl"),
     plugin("intellij.gradle.java") {
       withModule("intellij.gradle.jps")
     },
@@ -222,7 +231,6 @@ final class CommunityRepositoryModules {
     },
     plugin("intellij.java.coverage") {
       withModule("intellij.java.coverage.rt")
-      withProjectLibrary("JaCoCo") //todo[nik] convert to module library
     },
     plugin("intellij.java.decompiler") {
       directoryName = "java-decompiler"
@@ -259,15 +267,6 @@ final class CommunityRepositoryModules {
     plugin("intellij.space") {
       withProjectLibrary("space-idea-sdk")
       withProjectLibrary("jackson-datatype-joda")
-      withProjectLibrary("ktor-server-jetty")
-      withGeneratedResources(new ResourcesGenerator() {
-        @Override
-        File generateResources(BuildContext context) {
-          def gradleRunner = context.getGradle()
-          gradleRunner.run("Download Space Automation definitions", "setupSpaceAutomationDefinitions")
-          return context.paths.communityHomeDir.resolve("build/dependencies/build/space").toFile()
-        }
-      }, "lib")
     },
     plugin("intellij.lombok") {
       withModule("intellij.lombok.generated")
@@ -420,6 +419,8 @@ final class CommunityRepositoryModules {
       withProjectLibrary("perfetto-proto")
       withProjectLibrary("studio-proto")
       withProjectLibrary("studio-grpc")
+      withProjectLibrary("layoutinspector-proto")
+      withProjectLibrary("emulator-proto")
       // Profiler downloader will download all the other profiler libraries: profilers-transform.jar, perfa_okhttp.dex, perfa, perfd, simpleperf
       // Profiler downloader will also download instant run installers: /resources/installer
       // Profiler downloader will also download instant run transport: /resources/transport

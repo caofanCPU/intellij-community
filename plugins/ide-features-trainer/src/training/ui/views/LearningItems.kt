@@ -3,17 +3,16 @@ package training.ui.views
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.guessCurrentProject
+import com.intellij.openapi.wm.impl.welcomeScreen.learnIde.HeightLimitedPane
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.labels.LinkLabel
-import com.intellij.ui.components.panels.HorizontalLayout
-import com.intellij.ui.components.panels.VerticalLayout
-import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.IconUtil
 import com.intellij.util.ui.EmptyIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import icons.FeaturesTrainerIcons
+import org.jetbrains.annotations.NotNull
 import training.learn.CourseManager
 import training.learn.LearnBundle
 import training.learn.interfaces.Lesson
@@ -21,14 +20,15 @@ import training.learn.interfaces.Module
 import training.learn.lesson.LessonManager
 import training.ui.UISettings
 import training.util.createBalloon
-import java.awt.Color
+import training.util.rigid
+import training.util.scaledRigid
+import java.awt.*
 import java.awt.Cursor
-import java.awt.event.MouseEvent
-import java.awt.event.MouseListener
-import javax.swing.JLabel
-import javax.swing.JPanel
+import java.awt.event.*
+import javax.swing.*
+import javax.swing.border.EmptyBorder
 
-val HOVER_COLOR: Color = JBColor.namedColor("Plugins.hoverBackground", JBColor(0xEDF6FE, 0x464A4D))
+private val HOVER_COLOR: Color get() = JBColor.namedColor("Plugins.hoverBackground", JBColor(0xEDF6FE, 0x464A4D))
 
 class LearningItems : JPanel() {
   var modules: List<Module> = emptyList()
@@ -36,8 +36,7 @@ class LearningItems : JPanel() {
 
   init {
     name = "learningItems"
-    layout = VerticalLayout(10)
-    border = UISettings.instance.eastBorder
+    layout = BoxLayout(this, BoxLayout.Y_AXIS)
     isOpaque = false
     isFocusable = false
   }
@@ -45,7 +44,6 @@ class LearningItems : JPanel() {
   fun updateItems(showModule: Module? = null) {
     if (showModule != null) expanded.add(showModule)
 
-    layout = VerticalLayout(10)
     removeAll()
     for (module in modules) {
       if (module.lessons.isEmpty()) continue
@@ -63,9 +61,12 @@ class LearningItems : JPanel() {
   private fun createLessonItem(lesson: Lesson): JPanel {
     val result = JPanel()
     result.isOpaque = false
-    result.layout = HorizontalLayout(5)
-    val checkmarkIconLabel = JLabel(if (lesson.passed) FeaturesTrainerIcons.Img.GreenCheckmark else EmptyIcon.ICON_16)
-    result.add(JLabel(EmptyIcon.ICON_16))
+    result.layout = BoxLayout(result, BoxLayout.X_AXIS)
+    result.alignmentX = LEFT_ALIGNMENT
+    result.border = EmptyBorder(JBUI.scale(7), JBUI.scale(7), JBUI.scale(6), JBUI.scale(7))
+    val checkmarkIconLabel = createLabelIcon(if (lesson.passed) FeaturesTrainerIcons.Img.GreenCheckmark else EmptyIcon.ICON_16)
+    result.add(createLabelIcon(EmptyIcon.ICON_16))
+    result.add(scaledRigid(UISettings.instance.expandAndModuleGap, 0))
     result.add(checkmarkIconLabel)
 
     val name = LinkLabel<Any>(lesson.name, null)
@@ -80,7 +81,7 @@ class LearningItems : JPanel() {
         }
         CourseManager.instance.openLesson(project, lesson)
       }, null)
-    //name.font = JBFont.label().asPlain().deriveFont(16.0f)
+    result.add(rigid(4, 0))
     result.add(name)
     return result
   }
@@ -88,41 +89,31 @@ class LearningItems : JPanel() {
   private fun createModuleItem(module: Module): JPanel {
     val modulePanel = JPanel()
     modulePanel.isOpaque = false
-    modulePanel.layout = VerticalLayout(5)
+    modulePanel.layout = BoxLayout(modulePanel, BoxLayout.Y_AXIS)
+    modulePanel.alignmentY = TOP_ALIGNMENT
     modulePanel.background = Color(0, 0, 0, 0)
 
-    val result = JPanel()
+    val result = object : JPanel() {
+      private var onInstall = true
+
+      override fun paint(g: Graphics?) {
+        if (onInstall && mouseAlreadyInside(this)) {
+          setCorrectBackgroundOnInstall(this)
+          onInstall = false
+        }
+        super.paint(g)
+      }
+    }
     result.isOpaque = true
     result.background = UISettings.instance.backgroundColor
+    result.layout = BoxLayout(result, BoxLayout.X_AXIS)
+    result.border = EmptyBorder(JBUI.scale(8), JBUI.scale(7), JBUI.scale(10), JBUI.scale(7))
+    result.alignmentX = LEFT_ALIGNMENT
 
-    result.toolTipText = module.description
+    val mouseAdapter = object : MouseAdapter() {
+      override fun mouseReleased(e: MouseEvent) {
+        if (!result.visibleRect.contains(e.point)) return
 
-    result.layout = HorizontalLayout(5)
-
-    result.border = JBUI.Borders.empty(5, 7)
-
-    val expandPanel = JPanel().also {
-      it.layout = VerticalLayout(5)
-      it.isOpaque = false
-      it.background = Color(0, 0, 0, 0)
-      val expandIcon = IconUtil.toSize(if (expanded.contains(module)) UIUtil.getTreeExpandedIcon() else UIUtil.getTreeCollapsedIcon(),
-                                       JBUIScale.scale(16), JBUIScale.scale(16))
-      val expandIconLabel = JLabel(expandIcon)
-      it.add(expandIconLabel)
-    }
-    result.add(expandPanel)
-
-    val name = JLabel(module.name)
-    name.font = UISettings.instance.modulesFont
-    modulePanel.add(name)
-
-    createModuleProgressLabel(module)?.let {
-      modulePanel.add(it)
-    }
-    result.add(modulePanel)
-
-    result.addMouseListener(object : MouseListener {
-      override fun mouseClicked(e: MouseEvent) {
         if (expanded.contains(module)) {
           expanded.remove(module)
         }
@@ -133,15 +124,8 @@ class LearningItems : JPanel() {
         updateItems()
       }
 
-      override fun mousePressed(e: MouseEvent) {
-      }
-
-      override fun mouseReleased(e: MouseEvent) {
-      }
-
       override fun mouseEntered(e: MouseEvent) {
-        result.background = HOVER_COLOR
-        result.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        setCorrectBackgroundOnInstall(result)
         result.revalidate()
         result.repaint()
       }
@@ -152,15 +136,65 @@ class LearningItems : JPanel() {
         result.revalidate()
         result.repaint()
       }
-    })
+    }
+
+    val expandPanel = JPanel().also {
+      it.layout = BoxLayout(it, BoxLayout.Y_AXIS)
+      it.isOpaque = false
+      it.background = Color(0, 0, 0, 0)
+      it.alignmentY = TOP_ALIGNMENT
+      //it.add(Box.createVerticalStrut(JBUI.scale(1)))
+      it.add(rigid(0, 1))
+      val rawIcon = if (expanded.contains(module)) UIUtil.getTreeExpandedIcon() else UIUtil.getTreeCollapsedIcon()
+      it.add(createLabelIcon(rawIcon))
+    }
+    result.add(expandPanel)
+
+    val name = JLabel(module.name)
+    name.font = UISettings.instance.modulesFont
+    modulePanel.add(name)
+    scaledRigid(UISettings.instance.progressModuleGap, 0)
+    modulePanel.add(scaledRigid(0, UISettings.instance.progressModuleGap))
+
+    if (expanded.contains(module)) {
+      modulePanel.add(HeightLimitedPane(module.description ?: "", -1, UIUtil.getLabelForeground() as JBColor).also {
+        it.addMouseListener(mouseAdapter)
+      })
+    }
+    else {
+      createModuleProgressLabel(module)?.let {
+        modulePanel.add(it)
+      }
+    }
+
+    result.add(scaledRigid(UISettings.instance.expandAndModuleGap, 0))
+    result.add(modulePanel)
+    result.add(Box.createHorizontalGlue())
+    result.addMouseListener(mouseAdapter)
     return result
   }
+
+  private fun createLabelIcon(rawIcon: @NotNull Icon): JLabel = JLabel(IconUtil.toSize(rawIcon, JBUI.scale(16), JBUI.scale(16)))
 
   private fun createModuleProgressLabel(module: Module): JBLabel? {
     val progressStr = module.calcProgress() ?: return null
     val progressLabel = JBLabel(progressStr)
     progressLabel.name = "progressLabel"
     progressLabel.foreground = if (module.hasNotPassedLesson()) UISettings.instance.moduleProgressColor else UISettings.instance.completedColor
+    progressLabel.font = UISettings.instance.getFont(-1)
+    progressLabel.alignmentX = LEFT_ALIGNMENT
     return progressLabel
+  }
+
+  private fun setCorrectBackgroundOnInstall(component: Component) {
+    component.background = HOVER_COLOR
+    component.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+  }
+
+  private fun mouseAlreadyInside(c: Component): Boolean {
+    val mousePos: Point = MouseInfo.getPointerInfo().location
+    val bounds: Rectangle = c.bounds
+    bounds.location = c.locationOnScreen
+    return bounds.contains(mousePos)
   }
 }

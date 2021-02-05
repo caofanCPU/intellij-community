@@ -189,10 +189,7 @@ internal class MutableStorageIndexes(
 
   fun updateIndices(oldEntityId: EntityId, newEntityData: WorkspaceEntityData<*>, builder: AbstractEntityStorage) {
     val newEntityId = newEntityData.createEntityId()
-    builder.indexes.virtualFileIndex.getVirtualFileUrlInfoByEntityId(oldEntityId)
-      .forEach { (property, vfus) ->
-        virtualFileIndex.index(newEntityId, property, vfus)
-      }
+    virtualFileIndex.updateIndex(oldEntityId, newEntityId, builder.indexes.virtualFileIndex)
     entitySourceIndex.index(newEntityId, newEntityData.entitySource)
     builder.indexes.persistentIdIndex.getEntryById(oldEntityId)?.also { persistentIdIndex.index(newEntityId, it) }
   }
@@ -217,7 +214,8 @@ internal class MutableStorageIndexes(
   }
 
   fun applyExternalMappingChanges(diff: WorkspaceEntityStorageBuilderImpl,
-                                  replaceMap: HashBiMap<EntityId, EntityId>) {
+                                  replaceMap: HashBiMap<EntityId, EntityId>,
+                                  target: WorkspaceEntityStorageBuilderImpl) {
     diff.indexes.externalMappings.keys.asSequence().filterNot { it in externalMappings.keys }.forEach {
       externalMappings[it] = MutableExternalEntityMappingImpl<Any>()
     }
@@ -225,7 +223,7 @@ internal class MutableStorageIndexes(
     diff.indexes.externalMappings.forEach { (identifier, index) ->
       val mapping = externalMappings[identifier]
       if (mapping != null) {
-        mapping.applyChanges(index, replaceMap)
+        mapping.applyChanges(index, replaceMap, target)
         if (mapping.index.isEmpty()) {
           externalMappings.remove(identifier)
         }
@@ -239,11 +237,11 @@ internal class MutableStorageIndexes(
       val externalMapping = externalMappings[id]
       if (externalMapping == null) {
         val newMapping = MutableExternalEntityMappingImpl<Any>()
-        newMapping.index[newId] = data
+        newMapping.add(newId, data)
         externalMappings[id] = newMapping
       } else {
         externalMapping as MutableExternalEntityMappingImpl<Any>
-        externalMapping.index[newId] = data
+        externalMapping.add(newId, data)
       }
     }
   }

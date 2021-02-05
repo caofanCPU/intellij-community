@@ -19,6 +19,7 @@ import com.intellij.openapi.util.WindowStateService;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.ui.FlatSpeedSearchPopup;
 import com.intellij.openapi.vcs.ui.PopupListElementRendererWithIcon;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.*;
 import com.intellij.ui.components.panels.OpaquePanel;
 import com.intellij.ui.popup.KeepingPopupOpenAction;
@@ -48,6 +49,7 @@ import static com.intellij.util.ui.UIUtil.DEFAULT_VGAP;
 public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
   private static final DataKey<ListPopupModel> POPUP_MODEL = DataKey.create("VcsPopupModel");
   static final String BRANCH_POPUP = "BranchWidget";
+  private static final int BRANCH_POPUP_ROW_COUNT = 30;
   private Project myProject;
   private MyPopupListElementRenderer myListElementRenderer;
   private boolean myShown;
@@ -65,23 +67,26 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
                                 @NotNull Condition<? super AnAction> preselectActionCondition,
                                 @NotNull ActionGroup actions,
                                 @Nullable String dimensionKey) {
-    super(title, createBranchSpeedSearchActionGroup(actions), SimpleDataContext.getProjectContext(project),
+    super(title, createBranchSpeedSearchActionGroup(actions), SimpleDataContext.builder()
+            .add(CommonDataKeys.PROJECT, project)
+            .add(PlatformDataKeys.CONTEXT_COMPONENT, IdeFocusManager.getInstance(project).getFocusOwner())
+            .build(),
           preselectActionCondition, true);
     getTitle().setBackground(JBColor.PanelBackground);
     myProject = project;
     DataManager.registerDataProvider(getList(), dataId -> POPUP_MODEL.is(dataId) ? getListModel() : null);
     myKey = dimensionKey;
     if (myKey != null) {
-      Dimension storedSize = WindowStateService.getInstance(myProject).getSizeFor(myProject, myKey);
-      if (storedSize != null) {
-        //set forced size before component is shown
-        setSize(storedSize);
+      setDimensionServiceKey(myKey);
+      if (WindowStateService.getInstance(myProject).getSizeFor(myProject, myKey) != null) {
         myUserSizeChanged = true;
       }
       createTitlePanelToolbar(myKey);
     }
     setSpeedSearchAlwaysShown();
     myMeanRowHeight = getList().getCellBounds(0, 0).height + UIUtil.getListCellVPadding() * 2;
+    setMaxRowCount(BRANCH_POPUP_ROW_COUNT);
+    getList().setVisibleRowCount(BRANCH_POPUP_ROW_COUNT);
   }
 
   private void createTitlePanelToolbar(@NotNull String dimensionKey) {
@@ -157,11 +162,15 @@ public final class BranchActionGroupPopup extends FlatSpeedSearchPopup {
       @Override
       public void onClosed(@NotNull LightweightWindowEvent event) {
         popupWindow.removeComponentListener(windowListener);
-        if (dimensionKey != null && myUserSizeChanged) {
-          WindowStateService.getInstance(myProject).putSizeFor(myProject, dimensionKey, myPrevSize);
-        }
       }
     });
+  }
+
+  @Override
+  public void storeDimensionSize() {
+    if (myKey != null && myUserSizeChanged) {
+      super.storeDimensionSize();
+    }
   }
 
   private void processOnSizeChanged() {

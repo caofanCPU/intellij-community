@@ -58,7 +58,7 @@ public final class ExternalSystemApiUtil {
 
   @NotNull public static final String PATH_SEPARATOR = "/";
 
-  @NotNull public static final Comparator<Object> ORDER_AWARE_COMPARATOR = new Comparator<Object>() {
+  @NotNull public static final Comparator<Object> ORDER_AWARE_COMPARATOR = new Comparator<>() {
 
     @Override
     public int compare(@NotNull Object o1, @NotNull Object o2) {
@@ -180,12 +180,12 @@ public final class ExternalSystemApiUtil {
     return ExternalSystemManager.EP_NAME.getExtensionList();
   }
 
-  public static MultiMap<Key<?>, DataNode<?>> recursiveGroup(@NotNull Collection<DataNode<?>> nodes) {
+  public static MultiMap<Key<?>, DataNode<?>> recursiveGroup(@NotNull Collection<? extends DataNode<?>> nodes) {
     MultiMap<Key<?>, DataNode<?>> result = new ContainerUtil.KeyOrderedMultiMap<>();
-    Queue<Collection<DataNode<?>>> queue = new LinkedList<>();
+    Queue<Collection<? extends DataNode<?>>> queue = new LinkedList<>();
     queue.add(nodes);
     while (!queue.isEmpty()) {
-      Collection<DataNode<?>> _nodes = queue.remove();
+      Collection<? extends DataNode<?>> _nodes = queue.remove();
       result.putAllValues(group(_nodes));
       for (DataNode<?> _node : _nodes) {
         queue.add(_node.getChildren());

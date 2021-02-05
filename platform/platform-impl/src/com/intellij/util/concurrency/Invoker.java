@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.concurrency;
 
 import com.intellij.openapi.Disposable;
@@ -8,6 +8,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.util.ProgressIndicatorBase;
 import com.intellij.openapi.project.IndexNotReadyException;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.util.ThreeState;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval;
@@ -26,7 +27,6 @@ import java.util.function.Supplier;
 
 import static com.intellij.openapi.application.ApplicationManager.getApplication;
 import static com.intellij.openapi.progress.util.ProgressIndicatorUtils.runInReadActionWithWriteActionPriority;
-import static com.intellij.openapi.util.Disposer.register;
 import static java.awt.EventQueue.isDispatchThread;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
@@ -43,7 +43,7 @@ public abstract class Invoker implements Disposable {
   private Invoker(@NotNull String prefix, @NotNull Disposable parent, @NotNull ThreeState useReadAction) {
     description = "Invoker." + UID.getAndIncrement()+"."+prefix + (useReadAction != ThreeState.UNSURE ? ".ReadAction="+useReadAction : "") + ": "+parent;
     this.useReadAction = useReadAction;
-    register(parent, this);
+    Disposer.register(parent, this);
   }
 
   @Override
@@ -568,6 +568,11 @@ public abstract class Invoker implements Disposable {
   @NotNull
   public static Invoker forBackgroundPoolWithReadAction(@NotNull Disposable parent) {
     return new Background(parent, ThreeState.YES, 8);
+  }
+
+  @NotNull
+  public static Invoker forBackgroundPoolWithoutReadAction(@NotNull Disposable parent) {
+    return new Background(parent, ThreeState.NO, 8);
   }
 
   @NotNull

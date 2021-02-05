@@ -34,7 +34,11 @@
     <projectService serviceInterface="com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectTrackerSettings"
                     serviceImplementation="com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTrackerSettings"/>
     <projectService serviceImplementation="com.intellij.openapi.externalSystem.autoimport.ProjectNotificationAware"/>
-    <editorFloatingToolbarProvider implementation="com.intellij.openapi.externalSystem.autoimport.ProjectRefreshFloatingProvider"/>
+    <editorFloatingToolbarProvider
+      id="ExternalSystem.ProjectRefreshFloatingProvider"
+      order="after DefaultFloatingToolbarProvider"
+      implementation="com.intellij.openapi.externalSystem.autoimport.ProjectRefreshFloatingProvider"
+    />
 
     <!--Auto-link-->
     <projectService serviceImplementation="com.intellij.openapi.externalSystem.autolink.UnlinkedProjectNotificationAware"/>

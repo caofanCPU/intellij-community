@@ -60,7 +60,7 @@ public final class ApplicationInfoImpl extends ApplicationInfoEx {
   private String mySvgEapIconUrl;
   private String mySmallSvgIconUrl;
   private String mySmallSvgEapIconUrl;
-  private String myToolWindowIconUrl = "/toolwindows/toolWindowProject.png";
+  private String myToolWindowIconUrl = "/toolwindows/toolWindowProject.svg";
   private String myWelcomeScreenLogoUrl;
 
   private Calendar myBuildDate;
@@ -182,7 +182,7 @@ public final class ApplicationInfoImpl extends ApplicationInfoEx {
   private static final @NonNls String ATTRIBUTE_LAF_LIGHT = "light";
   private static final @NonNls String ATTRIBUTE_LAF_DARK = "dark";
 
-  static final String DEFAULT_PLUGINS_HOST = "https://plugins.jetbrains.com";
+  public static final String DEFAULT_PLUGINS_HOST = "https://plugins.jetbrains.com";
   static final String IDEA_PLUGINS_HOST_PROPERTY = "idea.plugins.host";
 
   private static volatile ApplicationInfoImpl instance;

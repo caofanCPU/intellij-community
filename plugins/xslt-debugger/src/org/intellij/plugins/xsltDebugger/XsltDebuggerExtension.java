@@ -111,7 +111,7 @@ public final class XsltDebuggerExtension extends XsltRunnerExtension {
     final Sdk jdk = configuration.getEffectiveJDK();
     assert jdk != null;
     final JavaVersion version = JavaVersion.tryParse(jdk.getVersionString());
-    if (version == null || version.feature < 5 || version.feature > 8) {  // todo: get rid of PortableRemoteObject usages in debugger
+    if (version == null || version.feature < 5) {
       throw new CantRunException(XsltDebuggerBundle.message("dialog.message.xslt.debugger.requires.java.to.run"));
     }
 
@@ -266,7 +266,7 @@ public final class XsltDebuggerExtension extends XsltRunnerExtension {
   }
 
   private static Path findSaxonJar(Path xsltDebuggerClassesRoot, String jarFile) {
-    Path transformerFile = xsltDebuggerClassesRoot.getParent().resolve("lib/rt").resolve(jarFile);
+    Path transformerFile = xsltDebuggerClassesRoot.getParent().resolve("rt").resolve(jarFile);
     if (!Files.exists(transformerFile)) {
       //running from sources
       Path libDir = getPluginEngineDirInSources().resolve("impl/lib");

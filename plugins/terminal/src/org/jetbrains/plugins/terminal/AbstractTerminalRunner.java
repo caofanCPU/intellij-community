@@ -22,29 +22,24 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.terminal.JBTerminalWidget;
 import com.intellij.util.ExceptionUtil;
-import com.intellij.util.LineSeparator;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.UiNotifyConnector;
-import com.jediterm.terminal.RequestOrigin;
-import com.jediterm.terminal.Terminal;
-import com.jediterm.terminal.TerminalStarter;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.ui.TerminalSession;
 import com.pty4j.windows.WinPtyException;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 public abstract class AbstractTerminalRunner<T extends Process> {
@@ -83,7 +78,7 @@ public abstract class AbstractTerminalRunner<T extends Process> {
   private void doRun() {
     // Create Server process
     try {
-      final T process = createProcess(null);
+      final T process = createProcess(new TerminalProcessOptions(null, null, null), null);
 
       UIUtil.invokeLaterIfNeeded(() -> initConsoleUI(process));
     }
@@ -92,9 +87,24 @@ public abstract class AbstractTerminalRunner<T extends Process> {
     }
   }
 
-  protected abstract T createProcess(@Nullable String directory) throws ExecutionException;
+  public @NotNull T createProcess(@NotNull TerminalProcessOptions options, @Nullable JBTerminalWidget widget) throws ExecutionException {
+    return createProcess(options.getWorkingDirectory(), null);
+  }
 
-  @ApiStatus.Experimental
+  /**
+   * @deprecated use {@link #createProcess(TerminalProcessOptions, JBTerminalWidget)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
+  protected T createProcess(@Nullable String directory) throws ExecutionException {
+    throw new AssertionError("Call createProcess(TerminalProcessOptions, JBTerminalWidget)");
+  }
+
+  /**
+   * @deprecated use {@link #createProcess(TerminalProcessOptions, JBTerminalWidget)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.3")
   protected T createProcess(@Nullable String directory, @Nullable String commandHistoryFilePath) throws ExecutionException {
     return createProcess(directory);
   }
@@ -159,7 +169,7 @@ public abstract class AbstractTerminalRunner<T extends Process> {
     openSessionInDirectory(terminal, null);
   }
 
-  public static void createAndStartSession(@NotNull JBTerminalWidget terminal, @NotNull TtyConnector ttyConnector) {
+  private static void createAndStartSession(@NotNull JBTerminalWidget terminal, @NotNull TtyConnector ttyConnector) {
     TerminalSession session = terminal.createTerminalSession(ttyConnector);
     session.start();
   }
@@ -207,23 +217,10 @@ public abstract class AbstractTerminalRunner<T extends Process> {
 
     ApplicationManager.getApplication().executeOnPooledThread(() -> {
       try {
-        // Create Server process
-        final T process = createProcess(directory, ShellTerminalWidget.getCommandHistoryFilePath(terminalWidget));
+        T process = createProcess(new TerminalProcessOptions(directory,
+                                                             size != null ? size.width : null,
+                                                             size != null ? size.height : null), terminalWidget);
         TtyConnector connector = createTtyConnector(process);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Initial resize to " + size);
-        }
-        if (size != null) {
-          // Resize ASAP once the process started.
-          // Even though it will be resized in invokeLater, it takes some time until invokeLater is executed.
-          // Sometimes it's enough to have cropped output, if the output is restricted by the terminal width.
-          try {
-            TerminalStarter.resizeTerminal(terminalWidget.getTerminal(), connector, size, RequestOrigin.User);
-          }
-          catch (Exception e) {
-            LOG.info("Cannot resize right after creation, process.isAlive: " + process.isAlive(), e);
-          }
-        }
 
         ApplicationManager.getApplication().invokeLater(() -> {
           try {
@@ -250,7 +247,7 @@ public abstract class AbstractTerminalRunner<T extends Process> {
 
   private void printError(@NotNull JBTerminalWidget terminalWidget, @NotNull String errorMessage, @NotNull Exception e) {
     LOG.info(errorMessage, e);
-    StringBuilder message = new StringBuilder();
+    @Nls StringBuilder message = new StringBuilder();
     if (terminalWidget.getTerminal().getCursorX() > 1) {
       message.append("\n");
     }
@@ -259,20 +256,10 @@ public abstract class AbstractTerminalRunner<T extends Process> {
     if (winptyException != null) {
       message.append(winptyException.getMessage()).append("\n\n");
     }
-    writeString(terminalWidget.getTerminal(), message.toString());
-    terminalWidget.getTerminal().writeCharacters("See your idea.log (Help | " + ShowLogAction.getActionName() + ") for the details.");
+    terminalWidget.writePlainMessage(message.toString());
+    terminalWidget.writePlainMessage("\n" + TerminalBundle.message("see.ide.log.error.description", ShowLogAction.getActionName()) + "\n");
     ApplicationManager.getApplication().invokeLater(() -> {
       terminalWidget.getTerminalPanel().setCursorVisible(false);
     }, myProject.getDisposed());
-  }
-
-  private static void writeString(@NotNull Terminal terminal, @NotNull String message) {
-    String str = StringUtil.convertLineSeparators(message, LineSeparator.LF.getSeparatorString());
-    List<String> lines = StringUtil.split(str, LineSeparator.LF.getSeparatorString(), true, false);
-    for (String line : lines) {
-      terminal.writeCharacters(line);
-      terminal.carriageReturn();
-      terminal.newLine();
-    }
   }
 }

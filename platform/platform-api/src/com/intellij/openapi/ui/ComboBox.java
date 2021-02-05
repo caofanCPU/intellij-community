@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.ui;
 
 import com.intellij.openapi.Disposable;
@@ -38,6 +38,7 @@ public class ComboBox<E> extends ComboBoxWithWidePopup<E> implements AWTEventLis
   public static final String TABLE_CELL_EDITOR_PROPERTY = "tableCellEditor";
 
   private int myMinimumAndPreferredWidth;
+  private boolean myUsePreferredSizeAsMinimum = true;
   protected boolean myPaintingNow;
 
   public ComboBox() {
@@ -234,19 +235,16 @@ public class ComboBox<E> extends ComboBoxWithWidePopup<E> implements AWTEventLis
     return getClientProperty("ComboBox.jbPopup") == null;
   }
 
-  @Override
-  public void setKeySelectionManager(KeySelectionManager aManager) {
-    super.setKeySelectionManager(aManager == null || isSwingPopup() ? aManager : new KeySelectionManager() {
-      @Override
-      public int selectionForKey(char aKey, ComboBoxModel aModel) {
-        showPopup();
-        return -1;
-      }
-    });
-  }
-
   public void setMinimumAndPreferredWidth(final int minimumAndPreferredWidth) {
     myMinimumAndPreferredWidth = minimumAndPreferredWidth;
+  }
+
+  public boolean isUsePreferredSizeAsMinimum() {
+    return myUsePreferredSizeAsMinimum;
+  }
+
+  public void setUsePreferredSizeAsMinimum(boolean usePreferredSizeAsMinimum) {
+    myUsePreferredSizeAsMinimum = usePreferredSizeAsMinimum;
   }
 
   private void registerCancelOnEscape() {
@@ -277,7 +275,12 @@ public class ComboBox<E> extends ComboBoxWithWidePopup<E> implements AWTEventLis
 
   @Override
   public final Dimension getMinimumSize() {
-    return getPreferredSize();
+    if (myUsePreferredSizeAsMinimum) {
+      return getPreferredSize();
+    }
+    else {
+      return super.getMinimumSize();
+    }
   }
 
   @Override

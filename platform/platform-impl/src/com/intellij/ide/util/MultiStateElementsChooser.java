@@ -117,25 +117,20 @@ public class MultiStateElementsChooser<T, S> extends JPanel implements Component
       JComponent.WHEN_FOCUSED
     );
 
-    final SpeedSearchBase<JBTable> speedSearch = new SpeedSearchBase<JBTable>(myTable) {
+    final SpeedSearchBase<JBTable> speedSearch = new SpeedSearchBase<>(myTable) {
       @Override
       public int getSelectedIndex() {
         return myTable.getSelectedRow();
       }
 
       @Override
-      protected int convertIndexToModel(int viewIndex) {
-        return myTable.convertRowIndexToModel(viewIndex);
+      protected int getElementCount() {
+        return myTableModel.getRowCount();
       }
 
       @Override
-      public Object @NotNull [] getAllElements() {
-        final int count = myTableModel.getRowCount();
-        Object[] elements = new Object[count];
-        for (int idx = 0; idx < count; idx++) {
-          elements[idx] = myTableModel.getElementAt(idx);
-        }
-        return elements;
+      protected Object getElementAt(int viewIndex) {
+        return myTableModel.getElementAt(myTable.convertRowIndexToModel(viewIndex));
       }
 
       @Override

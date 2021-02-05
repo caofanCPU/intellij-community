@@ -15,7 +15,6 @@ import com.intellij.ui.CollectionListModel;
 import com.intellij.ui.ListSpeedSearch;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -84,15 +83,7 @@ public abstract class ModuleAwareProjectConfigurable<T extends UnnamedConfigurab
     final Splitter splitter = new Splitter(false, 0.25f);
     CollectionListModel<Module> listDataModel = new CollectionListModel<>(modules);
     final JBList<Module> moduleList = new JBList<>(listDataModel);
-    new ListSpeedSearch<>(moduleList, (Function<Object, String>)o -> {
-      if (o == null) {
-        return getProjectConfigurableItemName();
-      }
-      else if (o instanceof Module) {
-        return ((Module)o).getName();
-      }
-      return null;
-    });
+    new ListSpeedSearch<>(moduleList, o -> o == null ? getProjectConfigurableItemName() : o.getName());
     moduleList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     moduleList.setCellRenderer(new ModuleListCellRenderer() {
       @Override

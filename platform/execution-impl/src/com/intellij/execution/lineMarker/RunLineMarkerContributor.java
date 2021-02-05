@@ -6,12 +6,10 @@ import com.intellij.execution.TestStateStorage;
 import com.intellij.execution.testframework.TestIconMapper;
 import com.intellij.execution.testframework.sm.runner.states.TestStateInfo;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.DataManager;
 import com.intellij.lang.LanguageExtension;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.text.TextWithMnemonic;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
@@ -34,15 +32,15 @@ public abstract class RunLineMarkerContributor {
     public final Icon icon;
     public final AnAction[] actions;
 
-    public final Function<PsiElement, String> tooltipProvider;
+    public final Function<? super PsiElement, String> tooltipProvider;
 
-    public Info(Icon icon, AnAction @NotNull [] actions, @Nullable Function<PsiElement, String> tooltipProvider) {
+    public Info(Icon icon, AnAction @NotNull [] actions, @Nullable Function<? super PsiElement, String> tooltipProvider) {
       this.icon = icon;
       this.actions = actions;
       this.tooltipProvider = tooltipProvider;
     }
 
-    public Info(Icon icon, @Nullable com.intellij.util.Function<PsiElement, String> tooltipProvider, AnAction @NotNull ... actions) {
+    public Info(Icon icon, @Nullable com.intellij.util.Function<? super PsiElement, String> tooltipProvider, AnAction @NotNull ... actions) {
       this.icon = icon;
       this.actions = actions;
       this.tooltipProvider = tooltipProvider == null ? null : it -> tooltipProvider.fun(it);
@@ -74,19 +72,19 @@ public abstract class RunLineMarkerContributor {
 
   @Nullable("null means disabled")
   protected static String getText(@NotNull AnAction action, @NotNull PsiElement element) {
-    DataContext parent = DataManager.getInstance().getDataContext();
-    DataContext dataContext = SimpleDataContext.getSimpleContext(CommonDataKeys.PSI_ELEMENT.getName(), element, parent);
     if (!(action instanceof ExecutorAction)) {
       return null;
     }
-//    return ((ExecutorAction)action).getActionName(dataContext);
+    DataContext dataContext = SimpleDataContext.builder()
+      .add(CommonDataKeys.PROJECT, element.getProject())
+      .add(CommonDataKeys.PSI_ELEMENT, element)
+      .build();
     AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, dataContext);
     action.update(event);
     if (!event.getPresentation().isEnabledAndVisible()) {
       return null;
     }
-    String name = ((ExecutorAction)action).getActionName(dataContext);
-    return name == null ? null : TextWithMnemonic.parse(name).getText();
+    return event.getPresentation().getText();
   }
 
   @NotNull

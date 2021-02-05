@@ -7,10 +7,8 @@ import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl
 import com.intellij.openapi.project.DumbAware
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
-import net.miginfocom.swing.MigLayout
 import java.beans.PropertyChangeListener
 import javax.swing.JComponent
-import javax.swing.JPanel
 
 open class PillActionComponent : AnAction(), CustomComponentAction, DumbAware {
   companion object {
@@ -46,9 +44,13 @@ open class PillActionComponent : AnAction(), CustomComponentAction, DumbAware {
   }
 
   override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-    val pane: JComponent = JPanel(MigLayout("ins 0, novisualpadding, gap 0"))
+    return object : ActionToolbarImpl(ActionPlaces.NAVIGATION_BAR_TOOLBAR, group, true) {
 
-    val bar = object : ActionToolbarImpl(ActionPlaces.NAVIGATION_BAR_TOOLBAR, group, true) {
+      init {
+        setForceMinimumSize(true)
+        layoutPolicy = NOWRAP_LAYOUT_POLICY
+      }
+
       private val presentationSyncer: PropertyChangeListener = PropertyChangeListener { evt ->
         val propertyName = evt.propertyName
         if (PILL_SHOWN == propertyName) {
@@ -70,11 +72,6 @@ open class PillActionComponent : AnAction(), CustomComponentAction, DumbAware {
         super.removeNotify()
       }
     }
-
-    pane.add(bar.component)
-
-    pane.border = JBUI.Borders.empty(0, 2)
-    return pane
   }
 
 }

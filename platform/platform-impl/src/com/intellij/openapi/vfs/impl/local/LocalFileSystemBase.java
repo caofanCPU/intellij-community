@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vfs.impl.local;
 
 import com.intellij.core.CoreBundle;
@@ -42,7 +42,8 @@ public abstract class LocalFileSystemBase extends LocalFileSystem {
   protected static final Logger LOG = Logger.getInstance(LocalFileSystemBase.class);
 
   private final FileAttributes FAKE_ROOT_ATTRIBUTES =
-    new FileAttributes(true, false, false, false, DEFAULT_LENGTH, DEFAULT_TIMESTAMP, false, isCaseSensitive() ? FileAttributes.CaseSensitivity.SENSITIVE : FileAttributes.CaseSensitivity.INSENSITIVE);
+    new FileAttributes(true, false, false, false, DEFAULT_LENGTH, DEFAULT_TIMESTAMP, false,
+                       isCaseSensitive() ? FileAttributes.CaseSensitivity.SENSITIVE : FileAttributes.CaseSensitivity.INSENSITIVE);
 
   private final List<LocalFileOperationsHandler> myHandlers = new ArrayList<>();
 
@@ -59,16 +60,6 @@ public abstract class LocalFileSystemBase extends LocalFileSystem {
   @Override
   public @Nullable VirtualFile refreshAndFindFileByPath(@NotNull String path) {
     return VfsImplUtil.refreshAndFindFileByPath(this, path);
-  }
-
-  @Override
-  public VirtualFile findFileByIoFile(@NotNull File file) {
-    return findFileByPath(FileUtil.toSystemIndependentName(file.getAbsolutePath()));
-  }
-
-  @Override
-  public VirtualFile refreshAndFindFileByIoFile(@NotNull File file) {
-    return refreshAndFindFileByPath(file.getAbsolutePath().replace(File.separatorChar, '/'));
   }
 
   private static @NotNull String toIoPath(@NotNull VirtualFile file) {
@@ -611,7 +602,7 @@ public abstract class LocalFileSystemBase extends LocalFileSystem {
 
   @Override
   public @NotNull String getCanonicallyCasedName(@NotNull VirtualFile file) {
-    if (file.isCaseSensitive()) {
+    if (file.getParent().isCaseSensitive()) {
       return super.getCanonicallyCasedName(file);
     }
 

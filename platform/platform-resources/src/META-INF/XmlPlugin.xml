@@ -97,9 +97,6 @@
 
     <extensionPoint name="xml.validateHandler" interface="com.intellij.xml.actions.validate.ValidateXmlHandler" dynamic="true"/>
 
-    <!--dead code-->
-    <extensionPoint name="xml.util.htmlDoctypeProvider" interface="com.intellij.xml.util.HtmlDoctypeProvider"/>
-
     <extensionPoint name="xml.namedReferenceProvider"
                     dynamic="true"
                     beanClass="com.intellij.xml.XmlNamedReferenceProviderBean">
@@ -236,7 +233,12 @@
 
     <lang.documentationProvider language="XML" implementationClass="com.intellij.xml.util.documentation.XmlDocumentationProvider"
                                 order="last"/>
-    <lang.documentationProvider language="DTD" implementationClass="com.intellij.xml.util.documentation.XmlDocumentationProvider"/>
+    <lang.documentationProvider language="XML" implementationClass="com.intellij.documentation.mdn.XmlMdnDocumentationProvider"
+                                order="before rng"/>
+    <lang.documentationProvider language="DTD" implementationClass="com.intellij.xml.util.documentation.XmlDocumentationProvider"
+                                id="dtd"/>
+    <lang.documentationProvider language="DTD" implementationClass="com.intellij.xml.util.documentation.HtmlDocumentationProvider"
+                                order="before dtd"/>
     <lang.documentationProvider language="HTML" implementationClass="com.intellij.xml.util.documentation.HtmlDocumentationProvider"
                                 id="html"/>
     <lang.documentationProvider language="XHTML" implementationClass="com.intellij.xml.util.documentation.XHtmlDocumentationProvider"/>

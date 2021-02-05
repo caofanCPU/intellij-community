@@ -15,10 +15,16 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.newvfs.VfsPresentationUtil;
 import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.util.DeprecatedMethodException;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.Convertor;
+import com.intellij.util.containers.JBIterable;
+import com.intellij.util.ui.tree.TreeUtil;
 import one.util.streamex.StreamEx;
-import org.jetbrains.annotations.*;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.PropertyKey;
 
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.MutableTreeNode;
@@ -197,14 +203,11 @@ public abstract class ChangesBrowserNode<T> extends DefaultMutableTreeNode imple
 
   @NotNull
   public <U> List<U> getAllObjectsUnder(@NotNull Class<U> clazz) {
-    return getObjectsUnderStream(clazz).collect(Collectors.toList());
+    return traverseObjectsUnder().filter(clazz).toList();
   }
 
-  @NotNull
-  public <U> Stream<U> getObjectsUnderStream(@NotNull Class<U> clazz) {
-    return toStream(preorderEnumeration())
-      .map(ChangesBrowserNode::getUserObject)
-      .select(clazz);
+  public @NotNull JBIterable<?> traverseObjectsUnder() {
+    return TreeUtil.treeNodeTraverser(this).traverse().map(TreeUtil::getUserObject);
   }
 
   @NotNull
@@ -214,10 +217,7 @@ public abstract class ChangesBrowserNode<T> extends DefaultMutableTreeNode imple
 
   @NotNull
   public Stream<VirtualFile> getFilesUnderStream() {
-    return toStream(preorderEnumeration())
-      .map(ChangesBrowserNode::getUserObject)
-      .select(VirtualFile.class)
-      .filter(VirtualFile::isValid);
+    return StreamEx.of(traverseObjectsUnder().filter(VirtualFile.class).filter(VirtualFile::isValid).iterator());
   }
 
   @NotNull
@@ -271,13 +271,19 @@ public abstract class ChangesBrowserNode<T> extends DefaultMutableTreeNode imple
     return getTextPresentation();
   }
 
+  /**
+   * Used by speedsearch, copy-to-clipboard and default renderer.
+   */
   @Nls
-  public abstract String getTextPresentation();
+  public String getTextPresentation() {
+    DeprecatedMethodException.report("Please implement `ChangesBrowserNode#getTextPresentation()` explicitly. " + this.getClass());
+    return userObject == null ? "" : userObject.toString(); //NON-NLS
+  }
 
   @Override
   public T getUserObject() {
     //noinspection unchecked
-    return (T) userObject;
+    return (T)userObject;
   }
 
   public boolean canAcceptDrop(final ChangeListDragBean dragBean) {
@@ -367,11 +373,6 @@ public abstract class ChangesBrowserNode<T> extends DefaultMutableTreeNode imple
     return ChangesUtil.findValidParentAccurately(filePath);
   }
 
-  @Deprecated
-  public final int getCount() {
-    return getFileCount();
-  }
-
   public boolean shouldExpandByDefault() {
     return true;
   }
@@ -393,6 +394,26 @@ public abstract class ChangesBrowserNode<T> extends DefaultMutableTreeNode imple
     @Override
     public String toString() {
       return myValue;
+    }
+  }
+
+  public static class WrapperTag implements Tag {
+    public static Tag wrap(@Nullable Object object) {
+      if (object == null) return null;
+      if (object instanceof Tag) return (Tag)object;
+      return new WrapperTag(object);
+    }
+
+    private final @NotNull Object myValue;
+
+    public WrapperTag(@NotNull Object value) {
+      myValue = value;
+    }
+
+    @Nls
+    @Override
+    public String toString() {
+      return myValue.toString(); //NON-NLS
     }
   }
 

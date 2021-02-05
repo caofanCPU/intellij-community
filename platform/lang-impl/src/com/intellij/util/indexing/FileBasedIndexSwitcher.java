@@ -84,7 +84,7 @@ public final class FileBasedIndexSwitcher {
     myNestedLevelCount--;
     if (myNestedLevelCount == 0) {
       RebuildStatus.reset();
-      myFileBasedIndex.initComponent();
+      myFileBasedIndex.loadIndexes();
       boolean unitTestMode = ApplicationManager.getApplication().isUnitTestMode();
 
       if (unitTestMode) {
@@ -99,7 +99,7 @@ public final class FileBasedIndexSwitcher {
         beforeIndexTasksStarted.run();
       }
 
-      FileBasedIndexImpl.cleanupProcessedFlag();
+      IndexingFlag.cleanupProcessedFlag();
       for (Project project : ProjectUtil.getOpenProjects()) {
         DumbService.getInstance(project).queueTask(new UnindexedFilesUpdater(project));
       }

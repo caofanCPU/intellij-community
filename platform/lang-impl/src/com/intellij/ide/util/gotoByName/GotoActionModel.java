@@ -1,9 +1,10 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.ide.util.gotoByName;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.intellij.BundleBase;
+import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.actions.ApplyIntentionAction;
 import com.intellij.ide.actions.ShowSettingsUtilImpl;
@@ -17,6 +18,7 @@ import com.intellij.lang.LangBundle;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
+import com.intellij.openapi.actionSystem.impl.Utils;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -44,6 +46,7 @@ import com.intellij.ui.speedSearch.SpeedSearchUtil;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.Function;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.EmptyIcon;
@@ -68,11 +71,11 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
   private static final Pattern INNER_GROUP_WITH_IDS = Pattern.compile("(.*) \\(\\d+\\)");
 
   @Nullable private final Project myProject;
-  private final Component myContextComponent;
   @Nullable private final WeakReference<Editor> myEditor;
+  private final DataContext myDataContext;
 
-  protected final ActionManager myActionManager = ActionManager.getInstance();
-  private final ActionsGlobalSummaryManager myStatManager = ApplicationManager.getApplication().getService(ActionsGlobalSummaryManager.class);
+  private final ActionManager myActionManager = ActionManager.getInstance();
+  private final GotoActionOrderStrategy myOrderStrategy = new GotoActionOrderStrategy();
 
   private static final Icon EMPTY_ICON = EmptyIcon.ICON_18;
 
@@ -95,15 +98,15 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
 
   private final ModalityState myModality;
 
-  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor) {
+  public GotoActionModel(@Nullable Project project, @Nullable Component component, @Nullable Editor editor) {
     this(project, component, editor, ModalityState.defaultModalityState());
   }
 
-  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor, @Nullable ModalityState modalityState) {
+  public GotoActionModel(@Nullable Project project, @Nullable Component component, @Nullable Editor editor, @Nullable ModalityState modalityState) {
     myProject = project;
-    myContextComponent = component;
     myEditor = new WeakReference<>(editor);
     myModality = modalityState;
+    myDataContext = Utils.wrapDataContext(DataManager.getInstance().getDataContext(component));
     buildActions();
   }
 
@@ -272,7 +275,7 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
         if (value instanceof BooleanOptionDescription) return 1;
         return 3;
       }
-      throw new IllegalArgumentException(value.getClass() + " - " + value.toString());
+      throw new IllegalArgumentException(value.getClass() + " - " + value);
     }
 
     @Override
@@ -296,14 +299,12 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
     return new GotoActionListCellRenderer(this::getGroupName);
   }
 
-  protected String getActionId(@NotNull AnAction anAction) {
+  String getActionId(@NotNull AnAction anAction) {
     return myActionManager.getId(anAction);
   }
 
-  private double getActionUsagesRatio(@Nullable String actionID) {
-    if (actionID == null) return .0;
-    ActionGlobalUsageInfo statistics = myStatManager.getActionStatistics(actionID);
-    return statistics != null ? statistics.getUsagesPerUserRatio() : .0;
+  private int compareActions(@Nullable AnAction first, @Nullable AnAction second) {
+    return myOrderStrategy.compare(first, second);
   }
 
   @NotNull
@@ -385,8 +386,9 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
                               @NotNull ActionGroup group,
                               @NotNull List<ActionGroup> path,
                               boolean showNonPopupGroups) {
-    AnAction[] actions = group
-      .getChildren(AnActionEvent.createFromDataContext(ActionPlaces.ACTION_SEARCH, null, SimpleDataContext.getProjectContext(myProject)));
+    DataContext context = myProject == null ? DataContext.EMPTY_CONTEXT : SimpleDataContext.getProjectContext(myProject);
+    AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.ACTION_SEARCH, null, context);
+    AnAction[] actions = SlowOperations.allowSlowOperations(() -> group.getChildren(event));
 
     boolean hasMeaningfulChildren = ContainerUtil.exists(actions, action -> myActionManager.getId(action) != null);
     if (!hasMeaningfulChildren) {
@@ -435,7 +437,8 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
     return ((MatchedValue)mv).getValueText();
   }
 
-  protected MatchMode actionMatches(@NotNull String pattern, com.intellij.util.text.Matcher matcher, @NotNull AnAction anAction) {
+  @NotNull
+  MatchMode actionMatches(@NotNull String pattern, com.intellij.util.text.Matcher matcher, @NotNull AnAction anAction) {
     Presentation presentation = anAction.getTemplatePresentation().clone();
     anAction.applyTextOverride(ActionPlaces.ACTION_SEARCH, presentation);
     String text = presentation.getText();
@@ -475,12 +478,17 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
   }
 
   @Nullable
-  protected Project getProject() {
+  Project getProject() {
     return myProject;
   }
 
-  protected Component getContextComponent() {
-    return myContextComponent;
+  @NotNull
+  DataContext getDataContext() {
+    // This data context can be reused because
+    // 1. it was reused before
+    // 2. context component shall not change much while SE popup is open
+    // 2. EDT event count check is not applied
+    return myDataContext;
   }
 
   @NotNull
@@ -636,7 +644,6 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
     @NotNull private final AnAction myAction;
     @NotNull private final MatchMode myMode;
     @Nullable private final GroupMapping myGroupMapping;
-    private final DataContext myDataContext;
     private final GotoActionModel myModel;
     private volatile Presentation myPresentation;
     private final String myActionText;
@@ -644,12 +651,10 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
     public ActionWrapper(@NotNull AnAction action,
                          @Nullable GroupMapping groupMapping,
                          @NotNull MatchMode mode,
-                         DataContext dataContext,
                          GotoActionModel model) {
       myAction = action;
       myMode = mode;
       myGroupMapping = groupMapping;
-      myDataContext = dataContext;
       myModel = model;
 
       Presentation presentation = action.getTemplatePresentation().clone();
@@ -675,12 +680,8 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
       int compared = myMode.compareTo(o.getMode());
       if (compared != 0) return compared;
 
-      if (Registry.is("search.everywhere.consider.action.statistics")) {
-        double myRatio = myModel.getActionUsagesRatio(myModel.getActionId(getAction()));
-        double oRatio = myModel.getActionUsagesRatio(myModel.getActionId(o.getAction()));
-        int byStat = -Double.compare(myRatio, oRatio);
-        if (byStat != 0) return byStat;
-      }
+      int byStat = myModel.compareActions(getAction(), o.getAction());
+      if (byStat != 0) return byStat;
 
       Presentation myPresentation = myAction.getTemplatePresentation();
       Presentation oPresentation = o.getAction().getTemplatePresentation();
@@ -709,8 +710,9 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
     public Presentation getPresentation() {
       if (myPresentation != null) return myPresentation;
       Runnable r = () -> {
-        myPresentation = updateActionBeforeShow(myAction, myDataContext).getPresentation();
-        if (myGroupMapping != null) myGroupMapping.updateBeforeShow(myDataContext);
+        DataContext dataContext = myModel.getDataContext();
+        myPresentation = updateActionBeforeShow(myAction, dataContext).getPresentation();
+        if (myGroupMapping != null) myGroupMapping.updateBeforeShow(dataContext);
       };
       if (ApplicationManager.getApplication().isDispatchThread()) {
         try {
@@ -727,7 +729,7 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
       return ObjectUtils.notNull(myPresentation, myAction.getTemplatePresentation());
     }
 
-    private boolean hasPresentation() {
+    public boolean hasPresentation() {
       return myPresentation != null;
     }
 
@@ -836,7 +838,8 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
         }
 
         if (toggle) {
-          AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, ((ActionWrapper)value).myDataContext);
+          DataContext dataContext = actionWithParentGroup.myModel.getDataContext();
+          AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, dataContext);
           boolean selected = ((ToggleAction)anAction).isSelected(event);
           addOnOffButton(panel, selected);
         }
@@ -986,17 +989,24 @@ public final class GotoActionModel implements ChooseByNameModel, Comparator<Obje
                                                  Color fg,
                                                  boolean selected) {
       SimpleTextAttributes plain = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, fg);
-      SimpleTextAttributes highlighted = new SimpleTextAttributes(null, fg, null, SimpleTextAttributes.STYLE_SEARCH_MATCH);
-      List<TextRange> fragments = new ArrayList<>();
+
+      if (name.startsWith("<html>")) {
+        new HtmlToSimpleColoredComponentConverter(HtmlToSimpleColoredComponentConverter.DEFAULT_TAG_HANDLER).appendHtml(nameComponent, name, plain);
+        name = nameComponent.getCharSequence(false).toString();
+      }
+      else {
+        nameComponent.append(name, plain);
+      }
+
       nameComponent.setDynamicSearchMatchHighlighting(false);
       if (selected) {
         int matchStart = StringUtil.indexOfIgnoreCase(name, pattern, 0);
         if (matchStart >= 0) {
           nameComponent.setDynamicSearchMatchHighlighting(true);
-          fragments.add(TextRange.from(matchStart, pattern.length()));
+          List<TextRange> fragments = Collections.singletonList(TextRange.from(matchStart, pattern.length()));
+          SpeedSearchUtil.applySpeedSearchHighlighting(nameComponent, fragments, true);
         }
       }
-      SpeedSearchUtil.appendColoredFragments(nameComponent, name, fragments, plain, highlighted);
     }
   }
 }

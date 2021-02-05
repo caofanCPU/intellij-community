@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.changes.patch;
 
 import com.intellij.diff.DiffDialogHints;
@@ -52,7 +52,6 @@ import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.util.Alarm;
-import com.intellij.util.NullableConsumer;
 import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
@@ -74,15 +73,14 @@ import java.io.InputStreamReader;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
-import static com.intellij.ui.SimpleTextAttributes.STYLE_PLAIN;
 import static com.intellij.util.ObjectUtils.chooseNotNull;
 import static com.intellij.util.containers.ContainerUtil.map;
 
 public class ApplyPatchDifferentiatedDialog extends DialogWrapper {
-
   private static final Logger LOG = Logger.getInstance(ApplyPatchDifferentiatedDialog.class);
   private final ZipperUpdater myLoadQueue;
   private final TextFieldWithBrowseButton myPatchFile;
@@ -206,9 +204,9 @@ public class ApplyPatchDifferentiatedDialog extends DialogWrapper {
 
     ChangeListManager changeListManager = ChangeListManager.getInstance(project);
     if (changeListManager.areChangeListsEnabled()) {
-      myChangeListChooser = new ChangeListChooserPanel(project, new NullableConsumer<>() {
+      myChangeListChooser = new ChangeListChooserPanel(project, new Consumer<>() {
         @Override
-        public void consume(final @Nullable @NlsContexts.DialogMessage String errorMessage) {
+        public void accept(final @Nullable @NlsContexts.DialogMessage String errorMessage) {
           setOKActionEnabled(errorMessage == null && isChangeTreeEnabled());
           setErrorText(errorMessage, myChangeListChooser);
         }
@@ -1023,7 +1021,7 @@ public class ApplyPatchDifferentiatedDialog extends DialogWrapper {
         component.append(text, SimpleTextAttributes.GRAY_ATTRIBUTES);
         if (!patchInProgress.baseExistsOrAdded()) {
           component.append("  ");
-          component.append(VcsBundle.message("patch.apply.select.missing.base.link"), new SimpleTextAttributes(STYLE_PLAIN, JBUI.CurrentTheme.Link.linkColor()),
+          component.append(VcsBundle.message("patch.apply.select.missing.base.link"), SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES,
                            (Runnable)myChangesTreeList::handleInvalidChangesAndToggle);
         }
         else {

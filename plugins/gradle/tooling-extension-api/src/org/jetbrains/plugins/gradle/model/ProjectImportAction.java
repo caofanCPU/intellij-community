@@ -82,9 +82,9 @@ public class ProjectImportAction implements BuildAction<ProjectImportAction.AllM
 
   @Nullable
   @Override
-  public AllModels execute(BuildController controller) {
+  public AllModels execute(final BuildController controller) {
     configureAdditionalTypes(controller);
-    boolean isProjectsLoadedAction = myAllModels == null && myUseProjectsLoadedPhase;
+    final boolean isProjectsLoadedAction = myAllModels == null && myUseProjectsLoadedPhase;
     if (isProjectsLoadedAction || !myUseProjectsLoadedPhase) {
       long startTime = System.currentTimeMillis();
       myGradleBuild = controller.getBuildModel();
@@ -100,27 +100,49 @@ public class ProjectImportAction implements BuildAction<ProjectImportAction.AllM
 
     assert myGradleBuild != null;
     assert myModelConverter != null;
-    controller = new MyBuildController(controller, myGradleBuild);
+    final MyBuildController wrappedController = new MyBuildController(controller, myGradleBuild);
     for (BasicGradleProject gradleProject : myGradleBuild.getProjects()) {
-      addProjectModels(controller, myAllModels, gradleProject, isProjectsLoadedAction);
+      addProjectModels(wrappedController, myAllModels, gradleProject, isProjectsLoadedAction);
     }
-    addBuildModels(controller, myAllModels, myGradleBuild, isProjectsLoadedAction);
+    addBuildModels(wrappedController, myAllModels, myGradleBuild, isProjectsLoadedAction);
 
     if (myIsCompositeBuildsSupported) {
-      for (GradleBuild includedBuild : myGradleBuild.getIncludedBuilds()) {
-        if (!isProjectsLoadedAction) {
-          myAllModels.getIncludedBuilds().add(convert(includedBuild));
+      forEachNestedBuild(myGradleBuild, new GradleBuildConsumer() {
+        @Override
+        public void accept(@NotNull GradleBuild includedBuild) {
+          if (!isProjectsLoadedAction) {
+            myAllModels.getIncludedBuilds().add(convert(includedBuild));
+          }
+          for (BasicGradleProject project : includedBuild.getProjects()) {
+            addProjectModels(wrappedController, myAllModels, project, isProjectsLoadedAction);
+          }
+          addBuildModels(wrappedController, myAllModels, includedBuild, isProjectsLoadedAction);
         }
-        for (BasicGradleProject project : includedBuild.getProjects()) {
-          addProjectModels(controller, myAllModels, project, isProjectsLoadedAction);
-        }
-        addBuildModels(controller, myAllModels, includedBuild, isProjectsLoadedAction);
-      }
+      });
     }
     if (isProjectsLoadedAction) {
-      controller.getModel(TurnOffDefaultTasks.class);
+      wrappedController.getModel(TurnOffDefaultTasks.class);
     }
     return isProjectsLoadedAction && !myAllModels.hasModels() ? null : myAllModels;
+  }
+
+  private interface GradleBuildConsumer {
+    void accept(@NotNull GradleBuild build);
+  }
+
+  private static void forEachNestedBuild(@NotNull GradleBuild rootBuild, @NotNull GradleBuildConsumer buildConsumer) {
+    Set<String> processedBuildsPaths = new HashSet<String>();
+    String rootBuildPath = rootBuild.getBuildIdentifier().getRootDir().getPath();
+    processedBuildsPaths.add(rootBuildPath);
+    Queue<GradleBuild> queue = new LinkedList<GradleBuild>(rootBuild.getIncludedBuilds());
+    while (!queue.isEmpty()) {
+      GradleBuild includedBuild = queue.remove();
+      String includedBuildPath = includedBuild.getBuildIdentifier().getRootDir().getPath();
+      if (processedBuildsPaths.add(includedBuildPath)) {
+        buildConsumer.accept(includedBuild);
+        queue.addAll(includedBuild.getIncludedBuilds());
+      }
+    }
   }
 
   @NotNull
@@ -474,6 +496,16 @@ public class ProjectImportAction implements BuildAction<ProjectImportAction.AllM
       else {
         return myDelegate.findModel(model, aClass, aClass1, action);
       }
+    }
+
+    @Override
+    public <T> List<T> run(Collection<? extends BuildAction<? extends T>> collection) {
+      return myDelegate.run(collection);
+    }
+
+    @Override
+    public boolean getCanQueryProjectModelInParallel(Class<?> aClass) {
+      return myDelegate.getCanQueryProjectModelInParallel(aClass);
     }
 
     private boolean isMainBuild(Model model) {

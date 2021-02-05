@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.debugger.ui.impl.watch;
 
 import com.intellij.Patches;
@@ -20,6 +20,7 @@ import com.intellij.debugger.ui.tree.NodeDescriptorNameAdjuster;
 import com.intellij.debugger.ui.tree.ValueDescriptor;
 import com.intellij.debugger.ui.tree.render.Renderer;
 import com.intellij.debugger.ui.tree.render.*;
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
@@ -31,6 +32,8 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiExpression;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.xdebugger.frame.XValueModifier;
+import com.intellij.xdebugger.frame.XValueNode;
+import com.intellij.xdebugger.frame.presentation.XRegularValuePresentation;
 import com.intellij.xdebugger.impl.ui.tree.ValueMarkup;
 import com.sun.jdi.*;
 import org.jetbrains.annotations.NotNull;
@@ -59,6 +62,7 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
 
   private String myIdLabel;
   private String myValueText;
+  private String myCompactValueText;
   private boolean myFullValue = false;
 
   @Nullable
@@ -70,6 +74,13 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
   private boolean myIsExpandable;
 
   private boolean myShowIdLabel = true;
+
+  private static final OnDemandPresentationProvider ourDefaultOnDemandPresentationProvider = node -> {
+    node.setFullValueEvaluator(OnDemandRenderer.createFullValueEvaluator(JavaDebuggerBundle.message("message.node.evaluate")));
+    node.setPresentation(AllIcons.Debugger.Db_watch, new XRegularValuePresentation("", null, ""), false);
+  };
+
+  private OnDemandPresentationProvider myOnDemandPresentationProvider = ourDefaultOnDemandPresentationProvider;
 
   protected ValueDescriptorImpl(Project project, Value value) {
     myProject = project;
@@ -231,6 +242,14 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
 
   protected boolean isPrintExceptionToConsole() {
     return true;
+  }
+
+  public void applyOnDemandPresentation(@NotNull XValueNode node) {
+    myOnDemandPresentationProvider.setPresentation(node);
+  }
+
+  public void setOnDemandPresentationProvider(@NotNull OnDemandPresentationProvider onDemandPresentationProvider) {
+    myOnDemandPresentationProvider = onDemandPresentationProvider;
   }
 
   @Nullable
@@ -427,6 +446,15 @@ public abstract class ValueDescriptorImpl extends NodeDescriptorImpl implements 
   @Override
   public void setValueLabel(@NotNull String label) {
     myValueText = myFullValue ? label : DebuggerUtilsEx.truncateString(label);
+  }
+
+  public void setCompactValueLabel(String label) {
+    myCompactValueText = label;
+  }
+
+  @Nullable
+  public String getCompactValueText() {
+    return myCompactValueText;
   }
 
   @Override

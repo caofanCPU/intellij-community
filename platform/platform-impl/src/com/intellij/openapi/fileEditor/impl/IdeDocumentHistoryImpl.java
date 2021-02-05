@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl;
 
 import com.intellij.ide.ui.UISettings;
@@ -159,7 +159,7 @@ public class IdeDocumentHistoryImpl extends IdeDocumentHistory implements Dispos
     multicaster.addDocumentListener(listener, this);
     multicaster.addCaretListener(listener, this);
 
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.addExtensionPointListener(new ExtensionPointListener<FileEditorProvider>() {
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionRemoved(@NotNull FileEditorProvider provider, @NotNull PluginDescriptor pluginDescriptor) {
         String editorTypeId = provider.getEditorTypeId();
@@ -169,6 +169,9 @@ public class IdeDocumentHistoryImpl extends IdeDocumentHistory implements Dispos
         }
         myBackPlaces.removeIf(clearStatePredicate);
         myForwardPlaces.removeIf(clearStatePredicate);
+        if (myCommandStartPlace != null && myCommandStartPlace.getEditorTypeId().equals(editorTypeId)) {
+          myCommandStartPlace = null;
+        }
       }
     }, this);
   }

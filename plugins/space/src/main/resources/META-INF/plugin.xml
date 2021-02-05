@@ -20,19 +20,20 @@
     <applicationService serviceImplementation="com.intellij.space.settings.SpaceSettings"/>
 
     <applicationConfigurable
+      id="settings.space"
       groupId="tools"
       groupWeight="239"
       key="configurable.name"
       instance="com.intellij.space.settings.SpaceSettingsPanel"/>
 
     <toolWindow id="Space Automation"
-                icon="SpaceIcons.MainToolwindow"
+                icon="SpaceIcons.SpaceToolWindow"
                 anchor="right"
                 canCloseContents="true"
                 factoryClass="com.intellij.space.tools.SpaceToolWindowFactory"/>
 
     <toolWindow id="Space Code Reviews"
-                icon="SpaceIcons.MainToolwindow"
+                icon="SpaceIcons.SpaceToolWindow"
                 anchor="left"
                 canCloseContents="true"
                 doNotActivateOnStart="true"
@@ -64,6 +65,9 @@
     />
 
     <statistics.notificationIdsHolder implementation="com.intellij.space.notification.SpaceNotificationIdsHolder"/>
+
+    <virtualFileSystem key="space-diff" implementationClass="com.intellij.space.editor.SpaceDiffComplexPathVirtualFileSystem"/>
+    <virtualFileSystem key="space-chat" implementationClass="com.intellij.space.editor.SpaceChatComplexPathVirtualFileSystem"/>
   </extensions>
 
   <actions>
@@ -71,9 +75,10 @@
       <separator/>
       <action id="com.intellij.space.actions.SpaceMainToolBarAction"
               class="com.intellij.space.actions.SpaceMainToolBarAction"
-              icon="SpaceIcons.MainToolwindow">
+              icon="SpaceIcons.SpaceToolWindow">
       </action>
       <add-to-group group-id="NavBarToolBar" anchor="last"/>
+      <add-to-group group-id="MainToolBar" anchor="last"/>
     </group>
 
 
@@ -127,8 +132,13 @@
       <separator/>
       <action id="com.intellij.space.vcs.review.list.SpaceReviewAuthorActionGroup"
               class="com.intellij.space.vcs.review.list.SpaceReviewAuthorActionGroup"/>
-
     </group>
+
+    <action id="com.intellij.space.vcs.review.details.SpaceReviewCheckoutBranchAction"
+            class="com.intellij.space.vcs.review.details.SpaceReviewCheckoutBranchAction"/>
+
+    <action id="com.intellij.space.vcs.review.details.SpaceReviewUpdateBranchAction"
+            class="com.intellij.space.vcs.review.details.SpaceReviewUpdateBranchAction"/>
 
     <group id="space.review.changes.toolbar">
       <reference id="Diff.ShowDiff"/>
@@ -139,6 +149,7 @@
       <reference id="Diff.ShowDiff"/>
       <reference id="EditSource"/>
     </group>
+
   </actions>
 
   <resource-bundle>messages.SpaceBundle</resource-bundle>

@@ -21,15 +21,16 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.function.Consumer;
 
-public class RunnerAndConfigurationSettingsEditor extends SettingsEditor<RunnerAndConfigurationSettings> {
+public class RunnerAndConfigurationSettingsEditor extends SettingsEditor<RunnerAndConfigurationSettings> implements
+                                                                                                         TargetAwareRunConfigurationEditor {
 
   private final RunConfigurationFragmentedEditor<RunConfigurationBase<?>> myConfigurationEditor;
-  private final Consumer<JComponent> myConfigurationCreator;
+  private final Consumer<? super JComponent> myConfigurationCreator;
   private final @Nullable RunConfigurationStorageUi myRCStorageUi;
 
   public RunnerAndConfigurationSettingsEditor(RunnerAndConfigurationSettings settings,
                                               RunConfigurationFragmentedEditor<RunConfigurationBase<?>> configurationEditor,
-                                              Consumer<JComponent> configurationCreator) {
+                                              Consumer<? super JComponent> configurationCreator) {
     super(settings.createFactory());
     myConfigurationEditor = configurationEditor;
     myConfigurationCreator = configurationCreator;
@@ -43,6 +44,7 @@ public class RunnerAndConfigurationSettingsEditor extends SettingsEditor<RunnerA
                     : null;
   }
 
+  @Override
   public void targetChanged(String targetName) {
     myConfigurationEditor.targetChanged(targetName);
   }

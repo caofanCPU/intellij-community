@@ -23,6 +23,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.xml.XmlBundle;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class XmlElementContextType extends TemplateContextType {
 
@@ -34,9 +35,27 @@ public class XmlElementContextType extends TemplateContextType {
   public boolean isInContext(@NotNull TemplateActionContext templateActionContext) {
     PsiFile file = templateActionContext.getFile();
     int startOffset = templateActionContext.getStartOffset();
-    int endOffset = templateActionContext.getEndOffset();
-    if (endOffset <= startOffset) return false;
     if (!XmlContextType.isInXml(file, startOffset)) return false;
+    
+    return isInXmlElementContext(templateActionContext);
+  }
+
+  public static boolean isInXmlElementContext(@NotNull TemplateActionContext templateActionContext) {
+    int startOffset = templateActionContext.getStartOffset();
+    int endOffset = templateActionContext.getEndOffset();
+    PsiElement parent = findCommonParent(templateActionContext);
+    if (!(parent instanceof XmlTag)) return false;
+    TextRange range = parent.getTextRange();
+    return range.getStartOffset() >= startOffset && range.getEndOffset() <= endOffset;
+  }
+  
+  @Nullable
+  public static PsiElement findCommonParent(@NotNull TemplateActionContext templateActionContext) {
+    PsiFile file = templateActionContext.getFile();
+    int startOffset = templateActionContext.getStartOffset();
+    int endOffset = templateActionContext.getEndOffset();
+    if (endOffset <= startOffset) return null;
+
     PsiElement start = file.findElementAt(startOffset);
     PsiElement end = file.findElementAt(endOffset - 1);
     if (start instanceof PsiWhiteSpace) {
@@ -45,10 +64,7 @@ public class XmlElementContextType extends TemplateContextType {
     if (end instanceof PsiWhiteSpace) {
       end = end.getPrevSibling();
     }
-    if (start == null || end == null) return false;
-    PsiElement parent = PsiTreeUtil.findCommonParent(start, end);
-    if (!(parent instanceof XmlTag)) return false;
-    TextRange range = parent.getTextRange();
-    return range.getStartOffset() >= startOffset && range.getEndOffset() <= endOffset;
+    if (start == null || end == null) return null;
+    return PsiTreeUtil.findCommonParent(start, end);
   }
 }

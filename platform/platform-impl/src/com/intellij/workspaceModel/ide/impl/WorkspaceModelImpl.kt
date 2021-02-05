@@ -6,11 +6,10 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.registry.Registry
-import com.intellij.workspaceModel.ide.WorkspaceModel
-import com.intellij.workspaceModel.ide.WorkspaceModelChangeListener
-import com.intellij.workspaceModel.ide.WorkspaceModelTopics
+import com.intellij.workspaceModel.ide.*
 import com.intellij.workspaceModel.storage.*
 import com.intellij.workspaceModel.storage.bridgeEntities.FacetEntity
 import com.intellij.workspaceModel.storage.bridgeEntities.FacetId
@@ -20,7 +19,7 @@ import kotlin.system.measureTimeMillis
 
 class WorkspaceModelImpl(private val project: Project) : WorkspaceModel, Disposable {
   private val cacheEnabled = (!ApplicationManager.getApplication().isUnitTestMode && WorkspaceModelImpl.cacheEnabled) || forceEnableCaching
-  private val cache = if (cacheEnabled) WorkspaceModelCacheImpl(project, this) else null
+  override val cache = if (cacheEnabled) WorkspaceModelCacheImpl(project, this) else null
 
   /** specifies ID of a entity which changes should be printed to the log */
   private val entityToTrace = System.getProperty("idea.workspace.model.track.facet.id")?.let {
@@ -68,6 +67,10 @@ class WorkspaceModelImpl(private val project: Project) : WorkspaceModel, Disposa
     }
   }
 
+  fun blockDelayedLoading() {
+    loadedFromCache = false
+  }
+
   internal fun printInfoAboutTracedEntity(storage: WorkspaceEntityStorage, storageDescription: String) {
     if (entityToTrace != null) {
       log.info("Traced entity from $storageDescription: ${storage.resolve(entityToTrace)?.configurationXmlTag}")
@@ -79,6 +82,7 @@ class WorkspaceModelImpl(private val project: Project) : WorkspaceModel, Disposa
     val before = entityStorage.current
     val builder = WorkspaceEntityStorageBuilder.from(before)
     val result = updater(builder)
+    startPreUpdateHandlers(before, builder)
     val changes = builder.collectChanges(before)
     entityStorage.replace(builder.toStorage(), changes, this::onBeforeChanged, this::onChanged)
     return result
@@ -89,6 +93,21 @@ class WorkspaceModelImpl(private val project: Project) : WorkspaceModel, Disposa
     val result = updater(builder)
     entityStorage.replaceSilently(builder.toStorage())
     return result
+  }
+
+  override fun getBuilderSnapshot(): BuilderSnapshot {
+    val current = entityStorage.pointer
+    return BuilderSnapshot(current.version, current.storage)
+  }
+
+  override fun replaceProjectModel(replacement: StorageReplacement): Boolean {
+    ApplicationManager.getApplication().assertWriteAccessAllowed()
+
+    if (entityStorage.version != replacement.version) return false
+
+    entityStorage.replace(replacement.snapshot, replacement.changes, this::onBeforeChanged, this::onChanged)
+
+    return true
   }
 
   override fun dispose() = Unit
@@ -105,12 +124,30 @@ class WorkspaceModelImpl(private val project: Project) : WorkspaceModel, Disposa
     WorkspaceModelTopics.getInstance(project).syncPublisher(project.messageBus).changed(change)
   }
 
+  private fun startPreUpdateHandlers(before: WorkspaceEntityStorage, builder: WorkspaceEntityStorageBuilder) {
+    var startUpdateLoop = true
+    var updatesStarted = 0
+    while (startUpdateLoop && updatesStarted < PRE_UPDATE_LOOP_BLOCK) {
+      updatesStarted += 1
+      startUpdateLoop = false
+      PRE_UPDATE_HANDLERS.extensions().forEach {
+        startUpdateLoop = startUpdateLoop or it.update(before, builder)
+      }
+    }
+    if (updatesStarted >= PRE_UPDATE_LOOP_BLOCK) {
+      log.error("Loop workspace model updating")
+    }
+  }
+
   companion object {
     private val log = logger<WorkspaceModelImpl>()
     const val ENABLED_CACHE_KEY = "ide.new.project.model.cache"
 
     var forceEnableCaching = false
     val cacheEnabled = Registry.`is`(ENABLED_CACHE_KEY)
+
+    private val PRE_UPDATE_HANDLERS = ExtensionPointName.create<WorkspaceModelPreUpdateHandler>("com.intellij.workspaceModel.preUpdateHandler")
+    private const val PRE_UPDATE_LOOP_BLOCK = 100
   }
 }
 

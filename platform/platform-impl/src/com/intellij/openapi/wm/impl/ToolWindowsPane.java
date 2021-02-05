@@ -4,6 +4,7 @@ package com.intellij.openapi.wm.impl;
 import com.intellij.ide.RemoteDesktopService;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx;
@@ -36,6 +37,7 @@ import java.awt.*;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -74,15 +76,25 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
   private final Stripe rightStripe;
   private final Stripe bottomStripe;
   private final Stripe topStripe;
-  private final Stripe newStripe;
 
   private final List<Stripe> stripes = new ArrayList<>(4);
 
   private boolean isWideScreen;
   private boolean leftHorizontalSplit;
   private boolean rightHorizontalSplit;
+  private List<String> myDefaultRightButtons = new ArrayList<>();
+  private List<String> myDefaultLeftButtons = new ArrayList<>();
+  private List<String> myDefaultBottomButtons = new ArrayList<>();
 
-  ToolWindowsPane(@NotNull JFrame frame, @NotNull Disposable parentDisposable) {
+  @Nullable private final ToolwindowToolbar myLeftToolbar;
+  @Nullable  private final ToolwindowToolbar myRightToolbar;
+
+  ToolWindowsPane(@NotNull JFrame frame,
+                  @NotNull Disposable parentDisposable,
+                  @Nullable ToolwindowToolbar leftSidebar,
+                  @Nullable ToolwindowToolbar rightSidebar) {
+    myLeftToolbar = leftSidebar;
+    myRightToolbar = rightSidebar;
     setOpaque(false);
     this.frame = frame;
 
@@ -123,7 +135,6 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
     stripes.add(bottomStripe);
     rightStripe = new Stripe(SwingConstants.RIGHT);
     stripes.add(rightStripe);
-    newStripe = new IdeLeftToolbar();
 
     updateToolStripesVisibility(uiSettings);
 
@@ -135,7 +146,6 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
     add(leftStripe, JLayeredPane.POPUP_LAYER);
     add(bottomStripe, JLayeredPane.POPUP_LAYER);
     add(rightStripe, JLayeredPane.POPUP_LAYER);
-    add(newStripe, JLayeredPane.POPUP_LAYER);
     add(layeredPane, JLayeredPane.DEFAULT_LAYER);
 
     setFocusTraversalPolicy(new LayoutFocusTraversalPolicy());
@@ -161,12 +171,7 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
       bottomStripe.setBounds(0, 0, 0, 0);
       leftStripe.setBounds(0, 0, 0, 0);
       rightStripe.setBounds(0, 0, 0, 0);
-      if (Registry.is("ide.new.stripes.ui")) {
-        newStripe.setBounds(0, 0, newStripe.getPreferredSize().width, size.height);
-        layeredPane.setBounds(newStripe.getPreferredSize().width, 0, getWidth() - newStripe.getPreferredSize().width, getHeight());
-      } else {
-        layeredPane.setBounds(0, 0, getWidth(), getHeight());
-      }
+      layeredPane.setBounds(0, 0, getWidth(), getHeight());
     }
     else {
       Dimension topSize = topStripe.getPreferredSize();
@@ -182,13 +187,21 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
 
       UISettings uiSettings = UISettings.getInstance();
       if (uiSettings.getHideToolStripes() || uiSettings.getPresentationMode()) {
-        layeredPane.setBounds(0, 0, size.width, size.height);
+        if (isSquareStripeUI()) {
+          updateSquareStripes(false);
+        } else {
+          layeredPane.setBounds(0, 0, size.width, size.height);
+        }
       }
       else {
         int width = size.width - leftSize.width - rightSize.width;
         layeredPane.setBounds(leftSize.width, topSize.height, width, height);
       }
     }
+  }
+
+  private static boolean isSquareStripeUI() {
+    return Registry.is("ide.new.stripes.ui");
   }
 
   @Override
@@ -330,11 +343,22 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
     boolean oldVisible = leftStripe.isVisible();
 
     boolean showButtons = !uiSettings.getHideToolStripes() && !uiSettings.getPresentationMode();
-    boolean visible = (showButtons || state.isStripesOverlaid()) && !Registry.is("ide.new.stripes.ui");
+    boolean visible = (showButtons || state.isStripesOverlaid()) && !isSquareStripeUI();
     leftStripe.setVisible(visible);
     rightStripe.setVisible(visible);
     topStripe.setVisible(visible);
     bottomStripe.setVisible(visible);
+
+    if (myLeftToolbar != null && myRightToolbar != null) {
+      boolean oldSquareVisible = myLeftToolbar.isVisible() && myRightToolbar.isVisible();
+      boolean squareStripesVisible = isSquareStripeUI() && showButtons;
+      updateSquareStripes(squareStripesVisible);
+
+      if (isSquareStripeUI() && oldSquareVisible != squareStripesVisible) {
+        revalidate();
+        repaint();
+      }
+    }
 
     boolean overlayed = !showButtons && state.isStripesOverlaid();
 
@@ -346,6 +370,13 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
     if (oldVisible != visible) {
       revalidate();
       repaint();
+    }
+  }
+
+  private void updateSquareStripes(boolean squareStripesVisible) {
+    if (myLeftToolbar != null && myRightToolbar != null) {
+      myLeftToolbar.setVisible(squareStripesVisible);
+      myRightToolbar.setVisible(squareStripesVisible);
     }
   }
 
@@ -387,6 +418,14 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
       }
     }
     return null;
+  }
+
+  @Nullable
+  ToolwindowToolbar getSquareStripeFor(@NotNull ToolWindowAnchor anchor) {
+    if (ToolWindowAnchor.TOP == anchor || ToolWindowAnchor.RIGHT == anchor) return myRightToolbar;
+    if (ToolWindowAnchor.BOTTOM == anchor || ToolWindowAnchor.LEFT == anchor) return myLeftToolbar;
+
+    throw new IllegalArgumentException("Anchor=" + anchor);
   }
 
   void startDrag() {
@@ -550,10 +589,73 @@ public final class ToolWindowsPane extends JBLayeredPane implements UISettingsLi
     revalidate();
   }
 
-  public void onStripeButtonAdded(@NotNull StripeButton button) {
-    if (button.toolWindow.isAvailable() && button.toolWindow.getIcon() != null && Registry.is("ide.new.stripes.ui")) {
-      newStripe.addButton(button, (o1, o2) -> 0);
+  void onStripeButtonRemoved(@NotNull Project project, @NotNull ToolWindow toolWindow) {
+    if (!isSquareStripeUI()) return;
+    if (myLeftToolbar == null || myRightToolbar == null) return;
+
+    if (!toolWindow.isAvailable() || toolWindow.getIcon() == null) return;
+    toolWindow.setVisibleOnLargeStripe(false);
+
+    ToolWindowAnchor anchor = toolWindow.getLargeStripeAnchor();
+    if (ToolWindowAnchor.LEFT.equals(anchor) || ToolWindowAnchor.BOTTOM.equals(anchor)) {
+      myLeftToolbar.removeStripeButton(project, toolWindow, anchor);
     }
+    else if (ToolWindowAnchor.RIGHT.equals(anchor)) {
+      myRightToolbar.removeStripeButton(project, toolWindow, anchor);
+    }
+
+    updateToolbars();
+  }
+
+  void onStripeButtonAdded(@NotNull Project project,
+                           @NotNull ToolWindow toolWindow,
+                           @NotNull ToolWindowAnchor actualAnchor,
+                           @NotNull Comparator<ToolWindow> comparator) {
+    if (!isSquareStripeUI()) return;
+    if (myLeftToolbar == null || myRightToolbar == null) return;
+
+    ensureDefaultInitialized(project);
+
+    ToolWindowAnchor toolWindowAnchor = toolWindow.getAnchor();
+    if (toolWindowAnchor == ToolWindowAnchor.LEFT && myDefaultLeftButtons.contains(toolWindow.getId())
+        || toolWindowAnchor == ToolWindowAnchor.RIGHT && myDefaultRightButtons.contains(toolWindow.getId())
+        || toolWindowAnchor == ToolWindowAnchor.BOTTOM && myDefaultBottomButtons.contains(toolWindow.getId())) {
+      toolWindow.setVisibleOnLargeStripe(true);
+      actualAnchor = toolWindowAnchor;
+    }
+
+    toolWindow.setLargeStripeAnchor(actualAnchor);
+
+    if (!toolWindow.isAvailable() || toolWindow.getIcon() == null || !toolWindow.isVisibleOnLargeStripe()) return;
+
+    if (ToolWindowAnchor.LEFT.equals(actualAnchor) || ToolWindowAnchor.BOTTOM.equals(actualAnchor)) {
+      myLeftToolbar.addStripeButton(project, actualAnchor, comparator, toolWindow);
+    }
+    else if (ToolWindowAnchor.RIGHT.equals(actualAnchor)) {
+      myRightToolbar.addStripeButton(project, actualAnchor, comparator, toolWindow);
+    }
+    updateToolbars();
+  }
+
+  private void ensureDefaultInitialized(@NotNull Project project) {
+    String key = "NEW_TOOLWINDOW_STRIPE_DEFAULTS";
+    if (PropertiesComponent.getInstance(project).isTrueValue(key)) {
+      return;
+    }
+
+    myDefaultLeftButtons = ToolWindowToolbarProvider.getInstance().defaultBottomToolwindows(project, ToolWindowAnchor.LEFT);
+    myDefaultRightButtons = ToolWindowToolbarProvider.getInstance().defaultBottomToolwindows(project, ToolWindowAnchor.RIGHT);
+    myDefaultBottomButtons = ToolWindowToolbarProvider.getInstance().defaultBottomToolwindows(project, ToolWindowAnchor.BOTTOM);
+
+    PropertiesComponent.getInstance(project).setValue(key, true);
+  }
+
+  void updateToolbars() {
+    if (myLeftToolbar == null || myRightToolbar == null) return;
+    myLeftToolbar.updateButtons();
+    myLeftToolbar.revalidate();
+    myRightToolbar.updateButtons();
+    myRightToolbar.revalidate();
   }
 
   @FunctionalInterface

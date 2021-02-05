@@ -69,7 +69,6 @@ import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.SkipSlowTestLocally
 import com.intellij.testFramework.builders.JavaModuleFixtureBuilder
-import com.intellij.testFramework.exceptionCases.IllegalArgumentExceptionCase
 import com.intellij.testFramework.fixtures.JavaCodeInsightFixtureTestCase
 import com.intellij.util.*
 import com.intellij.util.indexing.impl.IndexDebugProperties
@@ -79,6 +78,8 @@ import com.intellij.util.indexing.impl.UpdatableValueContainer
 import com.intellij.util.indexing.impl.forward.IntForwardIndex
 import com.intellij.util.indexing.impl.storage.VfsAwareMapIndexStorage
 import com.intellij.util.indexing.impl.storage.VfsAwareMapReduceIndex
+import com.intellij.util.indexing.events.IndexedFilesListener
+import com.intellij.util.indexing.events.VfsEventsMerger
 import com.intellij.util.io.CaseInsensitiveEnumeratorStringDescriptor
 import com.intellij.util.io.EnumeratorStringDescriptor
 import com.intellij.util.io.PersistentHashMap
@@ -95,9 +96,6 @@ import java.util.concurrent.CountDownLatch
 
 import static com.intellij.ide.plugins.DynamicPluginsTestUtil.loadExtensionWithText
 
-/**
- * @author Eugene Zhuravlev
- */
 @SkipSlowTestLocally
 class IndexTest extends JavaCodeInsightFixtureTestCase {
 
@@ -839,13 +837,14 @@ class IndexTest extends JavaCodeInsightFixtureTestCase {
     GlobalSearchScope allScope = new EverythingGlobalScope()
     // create file to be indexed
     final VirtualFile testFile = myFixture.addFileToProject("test.txt", "test").getVirtualFile()
-    assertNoException(new IllegalArgumentExceptionCase() {
+    assertNoException(IllegalArgumentException.class, new ThrowableRunnable<Throwable>() {
       @Override
-      void tryClosure() throws IllegalArgumentException {
+      void run() throws Throwable {
         //force to index new file with null project scope
-        FileBasedIndex.getInstance().ensureUpToDate(IdIndex.NAME, null, allScope)
+        FileBasedIndex.getInstance().ensureUpToDate(IdIndex.NAME, getProject(), allScope)
       }
     })
+    assertNotNull(testFile)
   }
 
   class RecordingVfsListener extends IndexedFilesListener {
@@ -925,8 +924,12 @@ class IndexTest extends JavaCodeInsightFixtureTestCase {
 
   void "test requesting nonexisted index fails as expected"() {
     ID<?, ?> myId = ID.create("my.id")
-    FileBasedIndex.instance.getContainingFiles(myId, "null", GlobalSearchScope.allScope(project))
-    FileBasedIndex.instance.processAllKeys(myId, CommonProcessors.alwaysTrue(), project)
+    try {
+      FileBasedIndex.instance.getContainingFiles(myId, "null", GlobalSearchScope.allScope(project))
+      FileBasedIndex.instance.processAllKeys(myId, CommonProcessors.alwaysTrue(), project)
+      fail()
+    }
+    catch (IllegalStateException ignored) {}
   }
 
   void "test read-only index access"() {
@@ -1500,6 +1503,27 @@ class IndexTest extends JavaCodeInsightFixtureTestCase {
 
     FileBasedIndex.getInstance().getFileData(CountingFileBasedIndexExtension.INDEX_ID, file, project)
     assertTrue(CountingFileBasedIndexExtension.COUNTER.get() > 0)
+  }
+
+  void 'test modified excluded file not present in index'() {
+    // we don't update excluded file index data, so we should wipe it to be consistent
+    def file = myFixture.addFileToProject("src/to_be_excluded/A.java", "class A {}").virtualFile
+    assertNotNull(findClass("A"))
+
+    def fileBasedIndex = (FileBasedIndexImpl)FileBasedIndex.instance
+    def trigramId = TrigramIndex.INDEX_ID
+    def fileId = ((VirtualFileWithId)file).getId()
+
+    fileBasedIndex.ensureUpToDate(trigramId, project, GlobalSearchScope.everythingScope(project))
+    assertNotEmpty(fileBasedIndex.getIndex(trigramId).getIndexedFileData(fileId).values())
+
+    def parentDir = file.parent
+    PsiTestUtil.addExcludedRoot(myFixture.getModule(), parentDir)
+    VfsUtil.saveText(file, "class B {}")
+
+    fileBasedIndex.ensureUpToDate(trigramId, project, GlobalSearchScope.everythingScope(project))
+    assertEmpty(fileBasedIndex.getIndex(trigramId).getIndexedFileData(fileId).values())
+    assertFalse(((VirtualFileSystemEntry)file).isFileIndexed())
   }
 
   private <T> ThrowableComputable<T, RuntimeException> asComputable(CachedValue<T> cachedValue) {

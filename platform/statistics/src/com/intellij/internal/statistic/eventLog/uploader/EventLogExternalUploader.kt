@@ -1,8 +1,10 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.eventLog.uploader
 
+import com.google.gson.Gson
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.internal.statistic.eventLog.*
+import com.intellij.internal.statistic.eventLog.connection.metadata.EventGroupsFilterRules
 import com.intellij.internal.statistic.eventLog.uploader.EventLogUploadException.EventLogUploadErrorType.*
 import com.intellij.internal.statistic.uploader.EventLogUploaderOptions
 import com.intellij.internal.statistic.uploader.EventLogUploaderOptions.*
@@ -12,6 +14,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.ArrayUtil
 import com.intellij.util.io.exists
+import org.jetbrains.annotations.NotNull
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -37,7 +40,9 @@ object EventLogExternalUploader {
               EventLogSystemLogger.logStartingExternalSend(recorderId, event.timestamp)
             }
             is ExternalUploadSendEvent -> {
-              EventLogSystemLogger.logFilesSend(recorderId, event.total, event.succeed, event.failed, true, event.successfullySentFiles)
+              val files = event.successfullySentFiles
+              val errors = event.errors
+              EventLogSystemLogger.logFilesSend(recorderId, event.total, event.succeed, event.failed, true, files, errors)
             }
             is ExternalUploadFinishedEvent -> {
               EventLogSystemLogger.logFinishedExternalSend(recorderId, event.error, event.timestamp)
@@ -87,11 +92,13 @@ object EventLogExternalUploader {
 
     val tempDir = getOrCreateTempDir()
     val uploader = findUploader()
-    val libs = findLibsByPrefixes(
-      "kotlin-stdlib", "gson", "commons-logging", "log4j.jar", "httpclient", "httpcore", "httpmime", "annotations.jar"
-    )
+    val libs = findLibsByPrefixes("kotlin-stdlib", "commons-logging", "http-client")
 
-    val libPaths = libs.map { it.path }
+    val libPaths = libs.map { it.path }.toMutableList()
+    libPaths.add(findLibraryByClass(NotNull::class.java))
+    libPaths.add(findLibraryByClass(org.apache.log4j.Logger::class.java))
+    libPaths.add(findLibraryByClass(Gson::class.java))
+    libPaths.add(findLibraryByClass(EventGroupsFilterRules::class.java))
     val classpath = joinAsClasspath(libPaths, uploader)
 
     val args = arrayListOf<String>()
@@ -160,6 +167,15 @@ object EventLogExternalUploader {
       throw EventLogUploadException("Cannot find uploader jar", NO_UPLOADER)
     }
     return uploader
+  }
+
+  private fun findLibraryByClass(clazz: Class<*>): String {
+    val library = PathManager.getJarForClass(clazz)
+
+    if (library == null || !Files.isRegularFile(library)) {
+      throw EventLogUploadException("Cannot find jar for $clazz", NO_UPLOADER)
+    }
+    return library.toString()
   }
 
   private fun findJavaHome(): String {

@@ -1,10 +1,11 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl;
 
 import com.intellij.ProjectTopics;
 import com.intellij.featureStatistics.fusCollectors.LifecycleUsageTriggerCollector;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.IdeEventQueue;
+import com.intellij.ide.actions.HideAllToolWindowsAction;
 import com.intellij.ide.actions.SplitAction;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
@@ -19,7 +20,12 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.editor.event.EditorFactoryEvent;
+import com.intellij.openapi.editor.event.EditorFactoryListener;
+import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.ex.FocusChangeListener;
 import com.intellij.openapi.extensions.ExtensionPointListener;
 import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.fileEditor.*;
@@ -40,6 +46,7 @@ import com.intellij.openapi.project.impl.ProjectImpl;
 import com.intellij.openapi.roots.ModuleRootEvent;
 import com.intellij.openapi.roots.ModuleRootListener;
 import com.intellij.openapi.startup.StartupManager;
+import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
@@ -189,6 +196,52 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
       }
     });
 
+    closeFilesOnFileEditorRemoval();
+    EditorFactory editorFactory = EditorFactory.getInstance();
+    for (Editor editor : editorFactory.getAllEditors()) {
+      registerEditor(editor);
+    }
+    editorFactory.addEditorFactoryListener(new EditorFactoryListener() {
+      @Override
+      public void editorCreated(@NotNull EditorFactoryEvent event) {
+        registerEditor(event.getEditor());
+      }
+    }, myProject);
+  }
+
+  private void registerEditor(Editor editor) {
+    Project project = editor.getProject();
+    if (project == null || project.isDisposed()) {
+      return;
+    }
+    if (editor instanceof EditorEx) {
+      ((EditorEx)editor).addFocusListener(new FocusChangeListener() {
+        @Override
+        public void focusGained(@NotNull Editor editor) {
+          Component comp = editor.getComponent();
+          while (comp != getMainSplitters() && comp != null) {
+            Component parent = comp.getParent();
+            if (parent instanceof Splitter) {
+              Splitter splitter = (Splitter)parent;
+              if ((splitter.getFirstComponent() == comp
+                   && (splitter.getProportion() == splitter.getMinProportion(true) || splitter.getProportion() == splitter.getMinimumProportion())) ||
+                  (splitter.getProportion() == splitter.getMinProportion(false) || splitter.getProportion() == splitter.getMaximumProportion())) {
+                Set<kotlin.Pair<Splitter, Boolean>> pairs = HideAllToolWindowsAction.Companion.getSplittersToMaximize(project, editor);
+                for (kotlin.Pair<Splitter, Boolean> pair : pairs) {
+                  Splitter s = pair.getFirst();
+                  s.setProportion(pair.getSecond() ? s.getMaximumProportion() : s.getMinimumProportion());
+                }
+                break;
+              }
+            }
+            comp = parent;
+          }
+        }
+      });
+    }
+  }
+
+  private void closeFilesOnFileEditorRemoval() {
     FileEditorProvider.EP_FILE_EDITOR_PROVIDER.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionRemoved(@NotNull FileEditorProvider extension, @NotNull PluginDescriptor pluginDescriptor) {
@@ -414,12 +467,18 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
     updateFileIcon(file, false);
   }
 
+  /**
+   * Reset the preview tab flag if an internal document change is made.
+   */
   private void resetPreviewFlag(@NotNull VirtualFile file) {
+    if (!FileDocumentManager.getInstance().isFileModified(file)) {
+      return;
+    }
     for (EditorsSplitters splitter : getAllSplitters()) {
       splitter.findEditorComposites(file).stream()
         .filter(EditorComposite::isPreview)
         .forEach(c -> c.setPreview(false));
-      splitter.updateFileStyle(file);
+      splitter.updateFileColor(file);
     }
   }
 
@@ -453,9 +512,11 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
 
       @Override
       public void run() {
-        for (EditorsSplitters each : getAllSplitters()) {
-          each.updateFileName(file);
-        }
+        SlowOperations.allowSlowOperations(() -> {
+          for (EditorsSplitters each : getAllSplitters()) {
+            each.updateFileName(file);
+          }
+        });
       }
     });
   }
@@ -975,7 +1036,10 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
       Window windowAncestor = SwingUtilities.getWindowAncestor(window.myPanel);
       if (windowAncestor != null &&
           windowAncestor.equals(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow())) {
-        EditorsSplitters.focusDefaultComponentInSplittersIfPresent(myProject);
+        JComponent component = composite.getPreferredFocusedComponent();
+        if (component != null) {
+          component.requestFocus();
+        }
         IdeFocusManager.getInstance(myProject).toFront(window.getOwner());
       }
     }
@@ -1476,11 +1540,6 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
   @Override
   public void addFileEditorManagerListener(@NotNull FileEditorManagerListener listener) {
     myListenerList.add(listener);
-  }
-
-  @Override
-  public void addFileEditorManagerListener(@NotNull FileEditorManagerListener listener, @NotNull Disposable parentDisposable) {
-    myProject.getMessageBus().connect(parentDisposable).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, listener);
   }
 
   @Override

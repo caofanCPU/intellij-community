@@ -6,13 +6,9 @@ import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.impl.RunDialog;
 import com.intellij.execution.impl.RunManagerImpl;
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.Presentation;
-import com.intellij.openapi.actionSystem.impl.ActionButton;
 import com.intellij.openapi.application.ApplicationManager;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.List;
 
 public class CreateAction extends BaseRunConfigurationAction {
   public CreateAction() {
@@ -21,7 +17,16 @@ public class CreateAction extends BaseRunConfigurationAction {
 
   @Override
   protected void perform(final ConfigurationContext context) {
-    choosePolicy(context).perform(context);
+    RunnerAndConfigurationSettings configuration = context.findExisting();
+    if (configuration == null) {
+      configuration = context.getConfiguration();
+    }
+    choosePolicy(context).perform(configuration, context);
+  }
+
+  @Override
+  protected void perform(RunnerAndConfigurationSettings configurationSettings, ConfigurationContext context) {
+    choosePolicy(context).perform(configurationSettings, context);
   }
 
   @Override
@@ -29,29 +34,19 @@ public class CreateAction extends BaseRunConfigurationAction {
     choosePolicy(context).update(presentation, context, actionText);
   }
 
-  private static BaseCreatePolicy choosePolicy(final ConfigurationContext context) {
-    final RunnerAndConfigurationSettings configuration = context.findExisting();
+  private BaseCreatePolicy choosePolicy(final ConfigurationContext context) {
+    final RunnerAndConfigurationSettings configuration = findExisting(context);
     return configuration == null ? Holder.CREATE_AND_EDIT : Holder.EDIT;
   }
 
   private static abstract class BaseCreatePolicy {
     public void update(final Presentation presentation, final ConfigurationContext context, @NotNull final String actionText) {
       updateText(presentation, actionText);
-      updateIcon(presentation, context);
     }
-
-    protected void updateIcon(final Presentation presentation, final ConfigurationContext context) {
-      final List<ConfigurationFromContext> fromContext = context.getConfigurationsFromContext();
-      if (fromContext == null || fromContext.size() == 1) {
-        presentation.putClientProperty(ActionButton.HIDE_DROPDOWN_ICON, Boolean.TRUE);
-        //hide fuzzy icon when multiple run configurations are possible
-        presentation.setIcon(AllIcons.General.Settings);
-      }
-    }
-
+    
     protected abstract void updateText(final Presentation presentation, final String actionText);
 
-    public abstract void perform(ConfigurationContext context);
+    protected abstract void perform(RunnerAndConfigurationSettings configurationSettings, ConfigurationContext context);
   }
 
   private static class CreateAndEditPolicy extends BaseCreatePolicy {
@@ -61,8 +56,7 @@ public class CreateAction extends BaseRunConfigurationAction {
     }
 
     @Override
-    public void perform(final ConfigurationContext context) {
-      final RunnerAndConfigurationSettings configuration = context.getConfiguration();
+    protected void perform(RunnerAndConfigurationSettings configuration, ConfigurationContext context) {
       if (ApplicationManager.getApplication().isUnitTestMode() ||
           RunDialog.editConfiguration(context.getProject(), configuration,
                                       ExecutionBundle.message("create.run.configuration.for.item.dialog.title", configuration.getName()))) {
@@ -75,8 +69,7 @@ public class CreateAction extends BaseRunConfigurationAction {
 
   private static class EditPolicy extends CreateAndEditPolicy {
     @Override
-    public void perform(final ConfigurationContext context) {
-      final RunnerAndConfigurationSettings configuration = context.getConfiguration();
+    protected void perform(RunnerAndConfigurationSettings configuration, ConfigurationContext context) {
       if (!ApplicationManager.getApplication().isUnitTestMode()) {
         RunDialog.editConfiguration(context.getProject(), configuration,
                                     ExecutionBundle.message("edit.run.configuration.for.item.dialog.title", configuration.getName()));

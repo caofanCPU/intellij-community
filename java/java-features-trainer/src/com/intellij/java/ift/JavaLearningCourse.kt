@@ -21,6 +21,7 @@ import training.learn.lesson.general.*
 import training.learn.lesson.general.assistance.CodeFormatLesson
 import training.learn.lesson.general.assistance.ParameterInfoLesson
 import training.learn.lesson.general.assistance.QuickPopupsLesson
+import training.learn.lesson.general.navigation.FindInFilesLesson
 import training.learn.lesson.general.refactorings.ExtractVariableFromBubbleLesson
 import training.learn.lesson.kimpl.LessonUtil
 
@@ -68,7 +69,7 @@ class JavaLearningCourse : LearningCourseBase(JavaLanguage.INSTANCE.id) {
     LearningModule(name = LessonsBundle.message("refactorings.module.name"),
                    description = LessonsBundle.message("refactorings.module.description"),
                    primaryLanguage = langSupport,
-                   moduleType = LessonType.PROJECT) {
+                   moduleType = LessonType.SINGLE_EDITOR) {
       fun ls(sampleName: String) = loadSample("Refactorings/$sampleName")
       listOf(
         JavaRenameLesson(it),
@@ -80,7 +81,7 @@ class JavaLearningCourse : LearningCourseBase(JavaLanguage.INSTANCE.id) {
     LearningModule(name = LessonsBundle.message("code.assistance.module.name"),
                    description = LessonsBundle.message("code.assistance.module.description"),
                    primaryLanguage = langSupport,
-                   moduleType = LessonType.PROJECT) {
+                   moduleType = LessonType.SINGLE_EDITOR) {
       fun ls(sampleName: String) = loadSample("CodeAssistance/$sampleName")
       listOf(
         CodeFormatLesson(it, lang, ls("CodeFormat.java.sample"), true),
@@ -95,6 +96,7 @@ class JavaLearningCourse : LearningCourseBase(JavaLanguage.INSTANCE.id) {
                    moduleType = LessonType.PROJECT) {
       listOf(
         JavaSearchEverywhereLesson(it),
+        FindInFilesLesson(it, lang, "src/warehouse/FindInFilesSample.java"),
         JavaFileStructureLesson(it),
         JavaDeclarationAndUsagesLesson(it),
         JavaInheritanceHierarchyLesson(it),
@@ -105,7 +107,7 @@ class JavaLearningCourse : LearningCourseBase(JavaLanguage.INSTANCE.id) {
     LearningModule(name = LessonsBundle.message("run.debug.module.name"),
                    description = LessonsBundle.message("run.debug.module.description"),
                    primaryLanguage = langSupport,
-                   moduleType = LessonType.PROJECT) {
+                   moduleType = LessonType.SINGLE_EDITOR) {
       listOf(
         JavaRunConfigurationLesson(it),
         JavaDebugLesson(it),

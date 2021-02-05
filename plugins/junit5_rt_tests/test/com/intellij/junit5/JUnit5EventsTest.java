@@ -4,7 +4,6 @@ package com.intellij.junit5;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.ContainerUtil;
-import jetbrains.buildServer.messages.serviceMessages.MapSerializerUtil;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.engine.config.DefaultJupiterConfiguration;
 import org.junit.jupiter.engine.descriptor.ClassTestDescriptor;
@@ -18,6 +17,8 @@ import org.junit.platform.engine.reporting.ReportEntry;
 import org.junit.platform.engine.support.descriptor.EngineDescriptor;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
+import org.junit.platform.runner.JUnitPlatform;
+import org.junit.runner.RunWith;
 import org.opentest4j.AssertionFailedError;
 import org.opentest4j.MultipleFailuresError;
 
@@ -29,7 +30,8 @@ import java.util.Collections;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-class JUnit5EventsTest {
+@RunWith(JUnitPlatform.class)
+public class JUnit5EventsTest {
 
   private JUnit5TestExecutionListener myExecutionListener;
   private StringBuffer myBuf;
@@ -83,7 +85,6 @@ class JUnit5EventsTest {
     myExecutionListener.executionFinished(identifier, TestExecutionResult.failed(multipleFailuresError));
 
 
-    String lineSeparator = MapSerializerUtil.escapeStr(System.getProperty("line.separator"), MapSerializerUtil.STD_ESCAPER);
     Assertions.assertEquals("##teamcity[enteredTheMatrix]\n" +
                             "##teamcity[testStarted id='|[engine:testMethod|]' name='test1()' nodeId='|[engine:testMethod|]' parentNodeId='|[engine:testClass|]' locationHint='java:test://com.intellij.junit5.JUnit5EventsTest$TestClass/test1' metainfo='']\n" +
                             "##teamcity[testStdOut id='|[engine:testMethod|]' name='test1()' nodeId='|[engine:testMethod|]' parentNodeId='|[engine:testClass|]' out = 'timestamp = " + reportEntry.getTimestamp() + ", key1 = value1, stdout = out1|n']\n" +

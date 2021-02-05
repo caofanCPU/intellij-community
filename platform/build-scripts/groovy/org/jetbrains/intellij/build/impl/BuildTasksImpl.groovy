@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.JDOMUtil
@@ -15,12 +15,15 @@ import groovy.transform.TypeCheckingMode
 import org.jetbrains.annotations.NotNull
 import org.jetbrains.intellij.build.*
 import org.jetbrains.jps.model.artifact.JpsArtifactService
+import org.jetbrains.jps.model.java.JavaResourceRootProperties
 import org.jetbrains.jps.model.java.JavaResourceRootType
+import org.jetbrains.jps.model.java.JavaSourceRootProperties
 import org.jetbrains.jps.model.java.JavaSourceRootType
 import org.jetbrains.jps.model.java.JpsJavaExtensionService
 import org.jetbrains.jps.model.library.JpsLibrary
 import org.jetbrains.jps.model.library.JpsOrderRootType
 import org.jetbrains.jps.model.module.JpsModule
+import org.jetbrains.jps.model.module.JpsTypedModuleSourceRoot
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -29,11 +32,7 @@ import java.nio.file.StandardCopyOption
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.Callable
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
+import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Function
 
@@ -70,22 +69,22 @@ final class BuildTasksImpl extends BuildTasks {
 
   @Override
   @CompileStatic(TypeCheckingMode.SKIP)
-  void zipSourcesOfModules(Collection<String> modules, String targetFilePath) {
+  void zipSourcesOfModules(Collection<String> modules, Path targetFile) {
     buildContext.executeStep("Build sources of modules archive", BuildOptions.SOURCES_ARCHIVE_STEP) {
-      buildContext.messages.progress("Building archive of ${modules.size()} modules to $targetFilePath")
-      buildContext.ant.mkdir(dir: new File(targetFilePath).getParent())
-      buildContext.ant.delete(file: targetFilePath)
-      buildContext.ant.zip(destfile: targetFilePath) {
-        modules.each {
-          JpsModule module = buildContext.findModule(it)
+      buildContext.messages.progress("Building archive of ${modules.size()} modules to $targetFile")
+      Files.createDirectories(targetFile.parent)
+      Files.deleteIfExists(targetFile)
+      buildContext.ant.zip(destfile: targetFile) {
+        for (String moduleName in modules) {
+          JpsModule module = buildContext.findModule(moduleName)
           if (module == null) {
-            buildContext.messages.error("Cannot build sources archive: '$it' module doesn't exist")
+            buildContext.messages.error("Cannot build sources archive: '$moduleName' module doesn't exist")
           }
-          module.getSourceRoots(JavaSourceRootType.SOURCE).each { root ->
-            buildContext.ant.
-              zipfileset(dir: root.file.absolutePath, prefix: root.properties.packagePrefix.replace('.', '/'), erroronmissingdir: false)
+          for (JpsTypedModuleSourceRoot<JavaSourceRootProperties> root in module.getSourceRoots(JavaSourceRootType.SOURCE)) {
+            buildContext.ant.zipfileset(dir: root.file.absolutePath,
+                                        prefix: root.properties.packagePrefix.replace('.', '/'), erroronmissingdir: false)
           }
-          module.getSourceRoots(JavaResourceRootType.RESOURCE).each { root ->
+          for (JpsTypedModuleSourceRoot<JavaResourceRootProperties> root in module.getSourceRoots(JavaResourceRootType.RESOURCE)) {
             buildContext.ant.zipfileset(dir: root.file.absolutePath, prefix: root.properties.relativeOutputPath, erroronmissingdir: false) {
               exclude(name: "**/*.png")
             }
@@ -93,7 +92,7 @@ final class BuildTasksImpl extends BuildTasks {
         }
       }
 
-      buildContext.notifyArtifactBuilt(targetFilePath)
+      buildContext.notifyArtifactBuilt(targetFile)
     }
   }
 
@@ -110,7 +109,7 @@ final class BuildTasksImpl extends BuildTasks {
       if (!Files.exists(targetFile)) {
         buildContext.messages.error("Failed to build provided modules list: $targetFile doesn't exist")
       }
-      buildContext.notifyArtifactBuilt(targetFile.toString())
+      buildContext.notifyArtifactWasBuilt(targetFile)
     })
   }
 
@@ -120,7 +119,8 @@ final class BuildTasksImpl extends BuildTasks {
                                     List<String> arguments,
                                     Map<String, Object> systemProperties = Collections.emptyMap(),
                                     List<String> vmOptions = List.of("-Xmx512m"),
-                                    List<String> pluginsToDisable = Collections.emptyList()) {
+                                    List<String> pluginsToDisable = Collections.emptyList(),
+                                    long timeoutMillis = TimeUnit.MINUTES.toMillis(10L)) {
     Files.createDirectories(tempDir)
 
     Set<String> ideClasspath = new LinkedHashSet<String>()
@@ -163,7 +163,8 @@ final class BuildTasksImpl extends BuildTasks {
       "com.intellij.idea.Main",
       arguments,
       jvmArgs,
-      ideClasspath)
+      ideClasspath,
+      timeoutMillis)
   }
 
   private static void disableCompatibleIgnoredPlugins(@NotNull BuildContext context,
@@ -182,14 +183,7 @@ final class BuildTasksImpl extends BuildTasks {
 
   private Path patchIdeaPropertiesFile() {
     StringBuilder builder = new StringBuilder(Files.readString(buildContext.paths.communityHomeDir.resolve("bin/idea.properties")))
-    if (!buildContext.shouldIDECopyJarsByDefault()) {
-      builder.append("""
-#---------------------------------------------------------------------
-# IDE can copy library .jar files to prevent their locking. Set this property to 'false' to enable copying.
-#---------------------------------------------------------------------
-idea.jars.nocopy=true
-""")
-    }
+
     buildContext.productProperties.additionalIDEPropertiesFilePaths.each {
       builder.append('\n').append(Files.readString(Paths.get(it)))
     }
@@ -399,20 +393,19 @@ idea.fatal.error.notification=disabled
     buildContext.messages.block("Build platform and plugin JARs") {
       if (buildContext.shouldBuildDistributions()) {
         distributionJARsBuilder.buildJARs()
-        distributionJARsBuilder.buildAdditionalArtifacts()
+        DistributionJARsBuilder.buildAdditionalArtifacts(buildContext, distributionJARsBuilder.projectStructureMapping)
+        scramble(buildContext)
+        DistributionJARsBuilder.reorderJars(buildContext)
       }
       else {
         buildContext.messages.info("Skipped building product distributions because 'intellij.build.target.os' property is set to '$BuildOptions.OS_NONE'")
         DistributionJARsBuilder.reorderJars(buildContext)
         DistributionJARsBuilder.createBuildSearchableOptionsTask(distributionJARsBuilder.getModulesForPluginsToPublish()).execute(buildContext)
-        distributionJARsBuilder.buildNonBundledPlugins()
+        distributionJARsBuilder.buildNonBundledPlugins(true)
       }
     }
 
     if (buildContext.shouldBuildDistributions()) {
-      if (buildContext.productProperties.scrambleMainJar) {
-        scramble()
-      }
       setupJBre()
       layoutShared()
 
@@ -497,7 +490,7 @@ idea.fatal.error.notification=disabled
       DistributionJARsBuilder.getPluginsByModules(buildContext, mainPluginModules))
     def distributionJARsBuilder = compilePlatformAndPluginModules(patchApplicationInfo(), pluginsToPublish)
     DistributionJARsBuilder.createBuildSearchableOptionsTask(distributionJARsBuilder.getModulesForPluginsToPublish()).execute(buildContext)
-    distributionJARsBuilder.buildNonBundledPlugins()
+    distributionJARsBuilder.buildNonBundledPlugins(true)
   }
 
   @Override
@@ -574,16 +567,20 @@ idea.fatal.error.notification=disabled
   private void copyDependenciesFile() {
     File outputFile = new File(buildContext.paths.artifacts, "dependencies.txt")
     FileUtil.copy(buildContext.dependenciesProperties.file, outputFile)
-    buildContext.notifyArtifactBuilt(outputFile.toString())
+    buildContext.notifyArtifactWasBuilt(outputFile.toPath())
   }
 
   @CompileStatic(TypeCheckingMode.SKIP)
-  private void scramble() {
-    if (buildContext.proprietaryBuildTools.scrambleTool != null) {
-      buildContext.proprietaryBuildTools.scrambleTool.scramble(buildContext.productProperties.productLayout.mainJarName, buildContext)
+  private void scramble(BuildContext buildContext) {
+    if (!buildContext.productProperties.scrambleMainJar) {
+      return
+    }
+
+    if (buildContext.proprietaryBuildTools.scrambleTool == null) {
+      buildContext.messages.warning("Scrambling skipped: 'scrambleTool' isn't defined")
     }
     else {
-      buildContext.messages.warning("Scrambling skipped: 'scrambleTool' isn't defined")
+      buildContext.proprietaryBuildTools.scrambleTool.scramble(buildContext.productProperties.productLayout.mainJarName, buildContext)
     }
     buildContext.ant.zip(destfile: "$buildContext.paths.artifacts/internalUtilities.zip") {
       fileset(file: "$buildContext.paths.buildOutputRoot/internal/internalUtilities.jar")
@@ -851,13 +848,14 @@ idea.fatal.error.notification=disabled
   @CompileStatic(TypeCheckingMode.SKIP)
   void buildFullUpdaterJar() {
     String updaterModule = "intellij.platform.updater"
-    def libraryFiles = JpsJavaExtensionService.dependencies(buildContext.findRequiredModule(updaterModule)).productionOnly().runtimeOnly().libraries.collectMany {
-      it.getFiles(JpsOrderRootType.COMPILED)
-    }
+    List<File> libraryFiles = JpsJavaExtensionService.dependencies(buildContext.findRequiredModule(updaterModule))
+      .productionOnly()
+      .runtimeOnly()
+      .libraries.collectMany {it.getFiles(JpsOrderRootType.COMPILED)}
     new LayoutBuilder(buildContext, false).layout(buildContext.paths.artifacts) {
       jar("updater-full.jar") {
         module(updaterModule)
-        libraryFiles.each { file ->
+        for (file in libraryFiles) {
           ant.zipfileset(src: file.absolutePath)
         }
       }
@@ -867,13 +865,12 @@ idea.fatal.error.notification=disabled
   @Override
   void runTestBuild() {
     checkProductProperties()
-    def patchedApplicationInfo = patchApplicationInfo()
-    def distributionJARsBuilder = compileModulesForDistribution(patchedApplicationInfo)
+    Path patchedApplicationInfo = patchApplicationInfo()
+    DistributionJARsBuilder distributionJARsBuilder = compileModulesForDistribution(patchedApplicationInfo)
     distributionJARsBuilder.buildJARs()
-    distributionJARsBuilder.buildInternalUtilities()
-    if (buildContext.productProperties.scrambleMainJar) {
-      scramble()
-    }
+    DistributionJARsBuilder.buildInternalUtilities(buildContext)
+    scramble(buildContext)
+    DistributionJARsBuilder.reorderJars(buildContext)
     layoutShared()
     Map<String, String> checkerConfig = buildContext.productProperties.versionCheckerConfig
     if (checkerConfig != null) {
@@ -896,7 +893,8 @@ idea.fatal.error.notification=disabled
 
     setupBundledMaven()
     Path patchedApplicationInfo = patchApplicationInfo()
-    compileModulesForDistribution(patchedApplicationInfo).buildJARs()
+    compileModulesForDistribution(patchedApplicationInfo).buildJARs(true)
+    DistributionJARsBuilder.reorderJars(buildContext)
     if (includeBinAndRuntime) {
       JvmArchitecture arch = SystemInfo.isArm64 ? JvmArchitecture.aarch64 : SystemInfo.is64Bit ? JvmArchitecture.x64 : JvmArchitecture.x32
       setupJBre(arch.name())
@@ -925,17 +923,14 @@ idea.fatal.error.notification=disabled
         }
       }
       else {
-        buildContext.ant.exec(executable: '/bin/sh', failOnError: true) {
-          arg(value: '-c')
-          arg(value: "mv \"$jbrTargetDir\"/* \"$targetDirectory\"")
-        }
+        BuildHelper.runProcess(buildContext, List.of("/bin/sh", "-c", "mv \"" + jbrTargetDir + "\"/* \"" + targetDirectory + '"'), null)
       }
 
-      def executableFilesPatterns = builder.generateExecutableFilesPatterns(true)
+      List<String> executableFilesPatterns = builder.generateExecutableFilesPatterns(true)
       buildContext.ant.chmod(perm: "755") {
         fileset(dir: targetDirectory.toString()) {
-          executableFilesPatterns.each {
-            include(name: it)
+          for (String pattern in executableFilesPatterns) {
+            include(name: pattern)
           }
         }
       }

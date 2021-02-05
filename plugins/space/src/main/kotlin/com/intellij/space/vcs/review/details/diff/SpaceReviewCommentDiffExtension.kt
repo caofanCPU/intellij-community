@@ -1,9 +1,7 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.review.details.diff
 
-import circlet.code.api.CodeDiscussionAnchor
-import circlet.code.api.InterpolatedLineState
-import circlet.code.api.PropagatedCodeDiscussion
+import circlet.code.api.*
 import circlet.platform.client.property
 import circlet.platform.client.resolve
 import com.intellij.diff.DiffContext
@@ -15,29 +13,37 @@ import com.intellij.diff.tools.util.base.DiffViewerListener
 import com.intellij.diff.util.Side
 import com.intellij.openapi.util.Disposer
 import com.intellij.space.components.SpaceWorkspaceComponent
+import com.intellij.space.settings.SpaceSettingsPanel
 import libraries.coroutines.extra.Lifetime
+import libraries.klogging.logger
+import runtime.reactive.LoadingValue
 
 class SpaceReviewCommentDiffExtension : DiffExtension() {
+  companion object {
+    val log = logger<SpaceSettingsPanel>()
+  }
+
   override fun onViewerCreated(viewer: FrameDiffTool.DiffViewer,
                                context: DiffContext,
                                request: DiffRequest) {
 
     val ws = SpaceWorkspaceComponent.getInstance().workspace.value ?: return
     val diffRequestData = request.getUserData(SpaceDiffKeys.DIFF_REQUEST_DATA) ?: return
-    val changesVm = diffRequestData.changesVm
-    val participantsVm = diffRequestData.participantsVm
-    val selectedSpaceChange = diffRequestData.spaceReviewChange
-    val discussions = changesVm.changes.value?.get(selectedSpaceChange.repository)?.discussions ?: return
+    val changes = diffRequestData.changes.value as? LoadingValue.Loaded ?: return
+    val reviewers: List<CodeReviewParticipant> = diffRequestData.participantsVm?.reviewers?.value ?: emptyList()
+    val selectedSpaceChange = diffRequestData.selectedChange
+    val discussions = changes.value?.get(selectedSpaceChange.repository)?.discussions ?: return
     val project = context.project!!
     val lifetime = diffRequestData.diffExtensionLifetimes.next()
-    val client = changesVm.client
+    val client = diffRequestData.spaceDiffVm.client
 
     viewer as DiffViewerBase
 
     fun pendingStateProvider(): Boolean {
-      val reviewers = participantsVm.value?.reviewers?.value?.filter { it.theirTurn == true } ?: return false
       val me = SpaceWorkspaceComponent.getInstance().workspace.value?.me ?: return false
-      return reviewers.any { it.user.resolve() == me.value }
+      return reviewers
+        .filter { it.theirTurn == true }
+        .any { it.user.resolve() == me.value }
     }
 
     val chatPanelFactory = SpaceReviewCommentPanelFactory(project, viewer, lifetime, ws, selectedSpaceChange, ::pendingStateProvider)
@@ -45,8 +51,8 @@ class SpaceReviewCommentDiffExtension : DiffExtension() {
     val spaceReviewCommentSubmitter = SpaceReviewCommentSubmitterImpl(
       lifetime,
       client,
-      changesVm.projectKey,
-      changesVm.reviewIdentifier,
+      diffRequestData.spaceDiffVm.projectKey,
+      ReviewIdentifier.Id(diffRequestData.spaceDiffVm.reviewId),
       selectedSpaceChange,
       ::pendingStateProvider
     )
@@ -57,17 +63,30 @@ class SpaceReviewCommentDiffExtension : DiffExtension() {
 
       override fun onAfterRediff() {
         if (!viewerIsReady) {
+          handler.updateCommentableRanges()
           discussions.values.forEach { propagatedCodeDiscussion ->
-            addCommentToDiff(chatPanelFactory, propagatedCodeDiscussion, lifetime, handler)
+            addCommentWithExceptionHandling(chatPanelFactory, propagatedCodeDiscussion, lifetime, handler)
           }
 
           discussions.change.forEach(lifetime) { (_, _, newValue) ->
-            newValue?.let { addCommentToDiff(chatPanelFactory, it, lifetime, handler) }
+            newValue?.let { addCommentWithExceptionHandling(chatPanelFactory, it, lifetime, handler) }
           }
         }
         viewerIsReady = true
       }
     })
+  }
+
+  private fun addCommentWithExceptionHandling(chatPanelFactory: SpaceReviewCommentPanelFactory,
+                                              propagatedCodeDiscussion: PropagatedCodeDiscussion,
+                                              lifetime: Lifetime,
+                                              handler: SpaceDiffCommentsHandler) {
+    try {
+      addCommentToDiff(chatPanelFactory, propagatedCodeDiscussion, lifetime, handler)
+    }
+    catch (e: Exception) {
+      log.error(e, "Unable to add comment panel")
+    }
   }
 
   private fun addCommentToDiff(commentPanelFactory: SpaceReviewCommentPanelFactory,

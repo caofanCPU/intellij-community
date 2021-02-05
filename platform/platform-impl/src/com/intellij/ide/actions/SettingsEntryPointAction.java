@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions;
 
 import com.intellij.icons.AllIcons;
@@ -31,10 +31,12 @@ import com.intellij.openapi.updateSettings.impl.PluginDownloader;
 import com.intellij.openapi.updateSettings.impl.PluginUpdateDialog;
 import com.intellij.openapi.updateSettings.impl.UpdateInfoDialog;
 import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.*;
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager;
 import com.intellij.ui.AnActionButton;
 import com.intellij.util.Consumer;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
@@ -52,12 +54,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Alexander Lobas
  */
-public class SettingsEntryPointAction extends AnAction implements DumbAware, RightAlignedToolbarAction,
+public final class SettingsEntryPointAction extends AnAction implements DumbAware, RightAlignedToolbarAction,
                                                                   AnAction.TransparentUpdate, TooltipDescriptionProvider {
+  private boolean myShowPopup = true;
+
   public SettingsEntryPointAction() {
     initPluginsListeners();
   }
@@ -66,7 +71,12 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
   public void actionPerformed(@NotNull AnActionEvent e) {
     resetActionIcon();
 
-    ListPopup popup = createMainPopup(e.getDataContext());
+    if (!myShowPopup) {
+      return;
+    }
+    myShowPopup = false;
+
+    ListPopup popup = createMainPopup(e.getDataContext(), () -> myShowPopup = true);
 
     InputEvent inputEvent = e.getInputEvent();
     if (inputEvent == null) {
@@ -101,7 +111,7 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
   }
 
   @NotNull
-  private static ListPopup createMainPopup(@NotNull DataContext context) {
+  private static ListPopup createMainPopup(@NotNull DataContext context, @NotNull Runnable disposeCallback) {
     DefaultActionGroup group = new DefaultActionGroup();
 
     if (myPlatformUpdateInfo != null) {
@@ -219,7 +229,11 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
       }
     }
 
-    return JBPopupFactory.getInstance().createActionGroupPopup(null, group, context, JBPopupFactory.ActionSelectionAid.MNEMONICS, true);
+    return JBPopupFactory.getInstance()
+      .createActionGroupPopup(null, group, context, JBPopupFactory.ActionSelectionAid.MNEMONICS, true, () -> {
+        AppExecutorUtil.getAppScheduledExecutorService().schedule(
+          () -> ApplicationManager.getApplication().invokeLater(disposeCallback, ModalityState.any()), 250, TimeUnit.MILLISECONDS);
+      }, -1);
   }
 
   private static PluginUpdatesService myUpdatesService;
@@ -252,20 +266,16 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
         public void install(@NotNull IdeaPluginDescriptor descriptor) {
           removePluginsUpdate(Collections.singleton(descriptor));
         }
-
-        @Override
-        public void uninstall(@NotNull IdeaPluginDescriptor descriptor) {
-        }
       });
     }
   }
 
   private static CheckForUpdateResult myPlatformUpdateInfo;
-  private static Collection<IdeaPluginDescriptor> myIncompatiblePlugins;
+  private static @Nullable Collection<? extends IdeaPluginDescriptor> myIncompatiblePlugins;
   private static boolean myShowPlatformUpdateIcon;
 
-  private static Collection<PluginDownloader> myUpdatedPlugins;
-  private static Collection<IdeaPluginDescriptor> myCustomRepositoryPlugins;
+  private static Collection<? extends PluginDownloader> myUpdatedPlugins;
+  private static Collection<? extends IdeaPluginDescriptor> myCustomRepositoryPlugins;
   private static boolean myShowPluginsUpdateIcon;
   private static boolean myEnableUpdateAction = true;
 
@@ -274,22 +284,22 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
   }
 
   public static void newPlatformUpdate(@Nullable CheckForUpdateResult platformUpdateInfo,
-                                       @Nullable Collection<IdeaPluginDescriptor> incompatiblePlugins) {
+                                       @Nullable Collection<? extends IdeaPluginDescriptor> incompatiblePlugins) {
     myPlatformUpdateInfo = platformUpdateInfo;
     myIncompatiblePlugins = incompatiblePlugins;
     myShowPlatformUpdateIcon = platformUpdateInfo != null;
     updateAction();
   }
 
-  public static void newPluginsUpdate(@Nullable Collection<PluginDownloader> updatedPlugins,
-                                      @Nullable Collection<IdeaPluginDescriptor> customRepositoryPlugins) {
+  public static void newPluginsUpdate(@Nullable Collection<? extends PluginDownloader> updatedPlugins,
+                                      @Nullable Collection<? extends IdeaPluginDescriptor> customRepositoryPlugins) {
     myUpdatedPlugins = updatedPlugins;
     myCustomRepositoryPlugins = customRepositoryPlugins;
     myShowPluginsUpdateIcon = updatedPlugins != null;
     updateAction();
   }
 
-  public static void removePluginsUpdate(@NotNull Collection<IdeaPluginDescriptor> descriptors) {
+  public static void removePluginsUpdate(@NotNull Collection<? extends IdeaPluginDescriptor> descriptors) {
     if (myUpdatedPlugins != null) {
       List<PluginDownloader> updatedPlugins =
         ContainerUtil.filter(myUpdatedPlugins, downloader -> {
@@ -309,9 +319,7 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
   }
 
   private static @NotNull @Nls String getActionTooltip() {
-    return myPlatformUpdateInfo == null && myUpdatedPlugins == null
-           ? IdeBundle.message("settings.entry.point.tooltip")
-           : IdeBundle.message("settings.entry.point.update.tooltip");
+    return IdeBundle.message("settings.entry.point.tooltip");
   }
 
   private static void resetActionIcon() {
@@ -354,7 +362,7 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
     initUISettingsListener();
 
     UISettings settings = UISettings.getInstance();
-    return !settings.getShowMainToolbar() && !settings.getShowToolbarInNavigationBar();
+    return !settings.getShowMainToolbar() && !settings.getShowToolbarInNavigationBar() && !Registry.is("ide.new.navbar");
   }
 
   private static final String WIDGET_ID = "settingsEntryPointWidget";
@@ -398,6 +406,7 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
 
   private static class MyStatusBarWidget implements StatusBarWidget, StatusBarWidget.IconPresentation {
     private StatusBar myStatusBar;
+    private boolean myShowPopup = true;
 
     private MyStatusBarWidget() {
       initPluginsListeners();
@@ -429,8 +438,13 @@ public class SettingsEntryPointAction extends AnAction implements DumbAware, Rig
         resetActionIcon();
         myStatusBar.updateWidget(WIDGET_ID);
 
+        if (!myShowPopup) {
+          return;
+        }
+        myShowPopup = false;
+
         Component component = event.getComponent();
-        ListPopup popup = createMainPopup(DataManager.getInstance().getDataContext(component));
+        ListPopup popup = createMainPopup(DataManager.getInstance().getDataContext(component), () -> myShowPopup = true);
         popup.addListener(new JBPopupListener() {
           @Override
           public void beforeShown(@NotNull LightweightWindowEvent event) {

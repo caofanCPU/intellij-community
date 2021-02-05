@@ -8,12 +8,9 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.FunctionParameter;
-import com.jetbrains.python.nameResolver.FQNamesProvider;
-import com.jetbrains.python.nameResolver.NameResolverTools;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
 import com.jetbrains.python.psi.types.PyCallableParameter;
 import com.jetbrains.python.psi.types.PyCallableType;
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -144,25 +141,9 @@ public interface PyCallExpression extends PyCallSiteExpression {
    *
    * @param resolveContext resolve context
    * @return objects which contains callable, modifier, implicit offset and "implicitly resolved" flag.
-   * @apiNote This method will become abstract in 2021.1.
    */
   @NotNull
-  default List<@NotNull PyCallableType> multiResolveCallee(@NotNull PyResolveContext resolveContext) {
-    return multiResolveCallee(resolveContext, 0);
-  }
-
-  /**
-   * Resolves the callee to possible functions.
-   *
-   * @param resolveContext resolve context
-   * @param implicitOffset implicit offset which is known from the context
-   * @return objects which contains callable, modifier, implicit offset and "implicitly resolved" flag.
-   * @deprecated {@code implicitOffset} is no longer processed, use {@link PyCallExpression#multiResolveCallee(PyResolveContext)} instead.
-   */
-  @NotNull
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  List<@NotNull PyCallableType> multiResolveCallee(@NotNull PyResolveContext resolveContext, int implicitOffset);
+  List<@NotNull PyCallableType> multiResolveCallee(@NotNull PyResolveContext resolveContext);
 
   /**
    * Resolves the callee to possible functions and maps arguments to parameters for all of them.
@@ -170,26 +151,9 @@ public interface PyCallExpression extends PyCallSiteExpression {
    * @param resolveContext resolve context
    * @return objects which contains callable and mappings.
    * Returned list is empty if the callee couldn't be resolved.
-   * @apiNote This method will become abstract in 2021.1.
    */
   @NotNull
-  default List<@NotNull PyArgumentsMapping> multiMapArguments(@NotNull PyResolveContext resolveContext) {
-    return multiMapArguments(resolveContext, 0);
-  }
-
-  /**
-   * Resolves the callee to possible functions and maps arguments to parameters for all of them.
-   *
-   * @param resolveContext resolve context
-   * @param implicitOffset implicit offset which is known from the context
-   * @return objects which contains callable and mappings.
-   * Returned list is empty if the callee couldn't be resolved.
-   * @deprecated {@code implicitOffset} is no longer processed, use {@link PyCallExpression#multiMapArguments(PyResolveContext)} instead.
-   */
-  @NotNull
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
-  List<@NotNull PyArgumentsMapping> multiMapArguments(@NotNull PyResolveContext resolveContext, int implicitOffset);
+  List<@NotNull PyArgumentsMapping> multiMapArguments(@NotNull PyResolveContext resolveContext);
 
   /**
    * Checks if the unqualified name of the callee matches any of the specified names
@@ -202,24 +166,6 @@ public interface PyCallExpression extends PyCallSiteExpression {
 
     return callee instanceof PyReferenceExpression &&
            ContainerUtil.exists(nameCandidates, name -> name.equals(((PyReferenceExpression)callee).getReferencedName()));
-  }
-
-  /**
-   * Checks if the qualified name of the callee matches any of the specified names provided by provider.
-   * May be <strong>heavy</strong>, and it is not recommended to use.
-   * Use {@link NameResolverTools#isCalleeShortCut(PyCallExpression, FQNamesProvider...)} or
-   * {@link com.jetbrains.extensions.python.PyCallExpressionExtKt#isCalleeName(PyCallExpression, FQNamesProvider...)}.
-   *
-   * @param name providers that provides one or more names to check
-   * @return true if matches, false otherwise
-   * @see com.jetbrains.python.nameResolver
-   * @see com.jetbrains.extensions.python.PyCallExpressionExtKt#isCalleeName(PyCallExpression, FQNamesProvider...)
-   * @deprecated use {@link com.jetbrains.extensions.python.PyCallExpressionExtKt#isCalleeName(PyCallExpression, FQNamesProvider...)}.
-   */
-  @Deprecated
-  default boolean isCallee(FQNamesProvider @NotNull ... name) {
-    final PyExpression callee = getCallee();
-    return callee instanceof PyReferenceExpression && NameResolverTools.isName(callee, name);
   }
 
   class PyArgumentsMapping {

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.codeStyle;
 
 import com.intellij.CodeStyleBundle;
@@ -21,7 +21,6 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.Processor;
 import com.intellij.util.ReflectionUtil;
-import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ClassMap;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.PresentableEnum;
@@ -158,6 +157,17 @@ public class CodeStyleSettings extends LegacyCodeStyleSettings implements Clonea
   }
 
   /**
+   * This method can return null during plugin unloading, if the requested settings have already been unregistered.
+   */
+  @Nullable
+  public <T extends CustomCodeStyleSettings> T getCustomSettingsIfCreated(@NotNull Class<T> aClass) {
+    synchronized (myCustomSettings) {
+      //noinspection unchecked
+      return (T)myCustomSettings.get(aClass);
+    }
+  }
+
+  /**
    * @deprecated
    * For short-lived temporary settings use {@code CodeStyle.doWithTemporarySettings(project,baseSettings,modifier,runnable},
    * for permanently created settings use {@link CodeStyleSettingsManager#cloneSettings(CodeStyleSettings)}
@@ -209,7 +219,7 @@ public class CodeStyleSettings extends LegacyCodeStyleSettings implements Clonea
 
   private final Map<FileType,IndentOptions> myAdditionalIndentOptions = new LinkedHashMap<>();
 
-  private static final String ourSystemLineSeparator = SystemProperties.getLineSeparator();
+  private static final String ourSystemLineSeparator = System.lineSeparator();
 
   /**
    * Line separator. It can be null if choosen line separator is "System-dependent"!

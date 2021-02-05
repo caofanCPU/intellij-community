@@ -3,6 +3,7 @@ package com.intellij.ide.structureView.newStructureView;
 
 import com.intellij.ide.CopyPasteDelegator;
 import com.intellij.ide.DataManager;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.PsiCopyPasteManager;
 import com.intellij.ide.dnd.aware.DnDAwareTree;
 import com.intellij.ide.structureView.*;
@@ -61,12 +62,14 @@ import org.jetbrains.concurrency.CancellablePromise;
 import org.jetbrains.concurrency.Promise;
 import org.jetbrains.concurrency.Promises;
 
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import javax.swing.event.TreeModelEvent;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.*;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -279,6 +282,10 @@ public class StructureViewComponent extends SimpleToolWindowPanel implements Tre
 
   private void addTreeMouseListeners() {
     EditSourceOnDoubleClickHandler.install(getTree());
+    installTreePopupHandlers();
+  }
+
+  protected void installTreePopupHandlers() {
     CustomizationUtil.installPopupHandler(getTree(), IdeActions.GROUP_STRUCTURE_VIEW_POPUP, ActionPlaces.STRUCTURE_VIEW_POPUP);
   }
 
@@ -417,7 +424,7 @@ public class StructureViewComponent extends SimpleToolWindowPanel implements Tre
       }
       return Promises.resolvedPromise(path);
     };
-    Function<TreePath, Promise<TreePath>> fallback = new Function<TreePath, Promise<TreePath>>() {
+    Function<TreePath, Promise<TreePath>> fallback = new Function<>() {
       @Override
       public Promise<TreePath> fun(TreePath path) {
         if (myCurrentFocusPromise != result) {
@@ -893,6 +900,15 @@ public class StructureViewComponent extends SimpleToolWindowPanel implements Tre
     public void processMouseEvent(MouseEvent event) {
       IdeMouseEventDispatcher.requestFocusInNonFocusedWindow(event);
       super.processMouseEvent(event);
+    }
+
+    @Override
+    public AccessibleContext getAccessibleContext() {
+      if (accessibleContext == null) {
+        accessibleContext = super.getAccessibleContext();
+        accessibleContext.setAccessibleName(IdeBundle.message("structure.view.tree.accessible.name"));
+      }
+      return accessibleContext;
     }
   }
 

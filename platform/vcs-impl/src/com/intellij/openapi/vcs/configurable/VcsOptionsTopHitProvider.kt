@@ -14,7 +14,7 @@ import com.intellij.openapi.vcs.contentAnnotation.VcsContentAnnotationSettings
 import com.intellij.openapi.vcs.readOnlyHandler.ReadonlyStatusHandlerImpl
 import com.intellij.openapi.vfs.ReadonlyStatusHandler
 import com.intellij.ui.layout.*
-import com.intellij.vcs.commit.CommitWorkflowManager.Companion.setCommitFromLocalChanges
+import com.intellij.vcs.commit.CommitModeManager.Companion.setCommitFromLocalChanges
 import com.intellij.vcs.commit.message.CommitMessageInspectionProfile
 
 private val vcsOptionGroupName get() = VcsBundle.message("settings.version.control.option.group")
@@ -60,7 +60,7 @@ private fun cdIncludeShelfBaseContent(project: Project): CheckboxDescriptor =   
 private fun cdChangelistConflictDialog(project: Project): CheckboxDescriptor =      CheckboxDescriptor(VcsBundle.message("settings.show.conflict.resolve.dialog.checkbox"), changelistsOptions(project)::SHOW_DIALOG, groupName = changelistsOptionGroupName)
 private fun cdChangelistShowConflicts(project: Project): CheckboxDescriptor =       CheckboxDescriptor(VcsBundle.message("settings.highlight.files.with.conflicts.checkbox"), changelistsOptions(project)::HIGHLIGHT_CONFLICTS, groupName = changelistsOptionGroupName)
 private fun cdChangelistShowNonCurrent(project: Project): CheckboxDescriptor =      CheckboxDescriptor(VcsBundle.message("settings.highlight.files.from.non.active.changelist.checkbox"), changelistsOptions(project)::HIGHLIGHT_NON_ACTIVE_CHANGELIST, groupName = changelistsOptionGroupName)
-private fun cdNonModalCommit(project: Project): CheckboxDescriptor =                CheckboxDescriptor(VcsBundle.message("settings.commit.without.dialog"), PropertyBinding({ VcsApplicationSettings.getInstance().COMMIT_FROM_LOCAL_CHANGES }, { setCommitFromLocalChanges(it) }), groupName = commitOptionGroupName)
+private fun cdNonModalCommit(project: Project): CheckboxDescriptor =                CheckboxDescriptor(VcsBundle.message("settings.commit.without.dialog"), PropertyBinding({ VcsApplicationSettings.getInstance().COMMIT_FROM_LOCAL_CHANGES }, { setCommitFromLocalChanges(project, it) }), groupName = commitOptionGroupName)
 // @formatter:on
 
 class VcsOptionsTopHitProvider : VcsOptionsTopHitProviderBase() {

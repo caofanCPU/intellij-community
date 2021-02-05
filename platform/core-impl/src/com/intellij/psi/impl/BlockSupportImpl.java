@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.psi.impl;
 
@@ -108,19 +108,18 @@ public class BlockSupportImpl extends BlockSupport {
                                                      @NotNull FileASTNode oldFileNode,
                                                      @NotNull TextRange changedPsiRange,
                                                      @NotNull CharSequence newFileText) {
-    final FileElement fileElement = (FileElement)oldFileNode;
-    final CharTable charTable = fileElement.getCharTable();
-    int lengthShift = newFileText.length() - fileElement.getTextLength();
+    final CharTable charTable = oldFileNode.getCharTable();
+    int lengthShift = newFileText.length() - oldFileNode.getTextLength();
 
     if (isTooDeep(file)) {
       return null;
     }
 
-    boolean isTemplateFile = fileElement.getElementType() instanceof ITemplateDataElementType;
+    boolean isTemplateFile = oldFileNode.getElementType() instanceof ITemplateDataElementType;
 
-    final ASTNode leafAtStart = fileElement.findLeafElementAt(Math.max(0, changedPsiRange.getStartOffset() - 1));
-    final ASTNode leafAtEnd = fileElement.findLeafElementAt(Math.min(changedPsiRange.getEndOffset(), fileElement.getTextLength() - 1));
-    ASTNode node = leafAtStart != null && leafAtEnd != null ? TreeUtil.findCommonParent(leafAtStart, leafAtEnd) : fileElement;
+    final ASTNode leafAtStart = oldFileNode.findLeafElementAt(Math.max(0, changedPsiRange.getStartOffset() - 1));
+    final ASTNode leafAtEnd = oldFileNode.findLeafElementAt(Math.min(changedPsiRange.getEndOffset(), oldFileNode.getTextLength() - 1));
+    ASTNode node = leafAtStart != null && leafAtEnd != null ? TreeUtil.findCommonParent(leafAtStart, leafAtEnd) : oldFileNode;
     Language baseLanguage = file.getViewProvider().getBaseLanguage();
 
     Function<ASTNode, Couple<ASTNode>> reparseNodeFunction = astNode -> {
@@ -129,7 +128,8 @@ public class BlockSupportImpl extends BlockSupport {
         final TextRange textRange = astNode.getTextRange();
 
         if (textRange.getLength() + lengthShift > 0 &&
-            (baseLanguage.isKindOf(elementType.getLanguage()) || !TreeUtil.containsOuterLanguageElements(astNode))) {
+            (baseLanguage.isKindOf(elementType.getLanguage()) || elementType instanceof IReparseableLeafElementType ||
+             !TreeUtil.containsOuterLanguageElements(astNode))) {
           final int start = textRange.getStartOffset();
           final int end = start + textRange.getLength() + lengthShift;
           if (end > newFileText.length()) {
@@ -290,14 +290,13 @@ public class BlockSupportImpl extends BlockSupport {
 
     newFile.setOriginalFile(fileImpl);
 
-    final FileElement newFileElement = (FileElement)newFile.getNode();
-    final FileElement oldFileElement = (FileElement)oldFileNode;
-    if (lastCommittedText.length() != oldFileElement.getTextLength()) {
+    final ASTNode newFileElement = newFile.getNode();
+    if (lastCommittedText.length() != oldFileNode.getTextLength()) {
       throw new IncorrectOperationException(viewProvider.toString());
     }
-    DiffLog diffLog = mergeTrees(fileImpl, oldFileElement, newFileElement, indicator, lastCommittedText);
+    DiffLog diffLog = mergeTrees(fileImpl, oldFileNode, newFileElement, indicator, lastCommittedText);
 
-    return new ReparseResult(diffLog, oldFileElement, newFileElement);
+    return new ReparseResult(diffLog, oldFileNode, newFileElement);
   }
 
   @NotNull

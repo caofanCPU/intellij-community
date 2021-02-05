@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch;
 
 import com.intellij.ide.highlighter.JavaFileType;
@@ -2108,6 +2108,25 @@ public class StructuralSearchTest extends StructuralSearchTestCase {
     assertEquals(0, findMatchesCount(s1,s2));
   }
 
+  public void testFindRecursiveCall() {
+    String source = "class X {\n" +
+                    "  void x() {\n" +
+                    "     y();\n" +
+                    "  }\n" +
+                    "  void y() {}" +
+                    "  void z() {" +
+                    "    z();" +
+                    "  }" +
+                    "  void a() {" +
+                    "    a();" +
+                    "  }\n" +
+                    "}";
+    String pattern = "void '_a() {" +
+                     "  '_a();" +
+                     "}";
+    assertEquals(2, findMatchesCount(source, pattern));
+  }
+
   public void testDownUpMatch() {
     String s1 = "class A {\n" +
                 "  int bbb(int c, int ddd, int eee) {\n" +
@@ -2578,6 +2597,16 @@ public class StructuralSearchTest extends StructuralSearchTestCase {
                "}";
     assertEquals("don't throw exception during matching", 0,
                  findMatchesCount(s, "void '_Method('_ParameterType '_Parameter*, '_LastType[] '_lastParameter);"));
+
+    String s2 = "class X {" +
+                "  void x() {" +
+                "    x();" +
+                "  }" +
+                "}";
+    assertEquals("don't throw exception during matching", 0,
+                 findMatchesCount(s2, "void '_x() {\n" +
+                                     "  '_x;\n" +
+                                     "}"));
   }
 
   public void testNoUnexpectedException() {

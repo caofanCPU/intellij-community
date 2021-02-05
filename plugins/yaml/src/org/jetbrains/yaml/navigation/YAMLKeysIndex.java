@@ -4,6 +4,7 @@ package org.jetbrains.yaml.navigation;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.indexing.*;
 import com.intellij.util.io.DataExternalizer;
+import com.intellij.util.io.EnumeratorIntegerDescriptor;
 import com.intellij.util.io.EnumeratorStringDescriptor;
 import com.intellij.util.io.KeyDescriptor;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -32,7 +33,7 @@ public final class YAMLKeysIndex extends FileBasedIndexExtension<String, Integer
   @NotNull
   @Override
   public DataIndexer<String, Integer, FileContent> getIndexer() {
-    return new DataIndexer<String, Integer, FileContent>() {
+    return new DataIndexer<>() {
       @NotNull
       @Override
       public Map<String, Integer> map(@NotNull FileContent inputData) {
@@ -66,17 +67,7 @@ public final class YAMLKeysIndex extends FileBasedIndexExtension<String, Integer
   @NotNull
   @Override
   public DataExternalizer<Integer> getValueExternalizer() {
-    return new DataExternalizer<Integer>() {
-      @Override
-      public void save(@NotNull DataOutput out, Integer value) throws IOException {
-        out.writeInt(value);
-      }
-
-      @Override
-      public Integer read(@NotNull DataInput in) throws IOException {
-        return in.readInt();
-      }
-    };
+    return EnumeratorIntegerDescriptor.INSTANCE;
   }
 
   @NotNull

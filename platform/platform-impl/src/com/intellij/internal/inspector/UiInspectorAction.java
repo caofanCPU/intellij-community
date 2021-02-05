@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.inspector;
 
 import com.google.common.base.MoreObjects;
@@ -17,42 +17,35 @@ import com.intellij.ide.plugins.PluginManager;
 import com.intellij.ide.ui.AntialiasingType;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.internal.InternalActionsBundle;
-import com.intellij.notification.Notification;
-import com.intellij.notification.NotificationType;
-import com.intellij.notification.Notifications;
-import com.intellij.notification.NotificationsManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.impl.ActionButton;
 import com.intellij.openapi.actionSystem.impl.ActionMenu;
 import com.intellij.openapi.actionSystem.impl.ActionMenuItem;
 import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.ex.EditorGutterComponentEx;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ui.configuration.actions.IconWithTextAction;
-import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.ui.GraphicsConfig;
-import com.intellij.openapi.ui.Splitter;
-import com.intellij.openapi.ui.StripeTable;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.DimensionService;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.ui.*;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.impl.status.TextPanel;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.ui.*;
+import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.border.CustomLineBorder;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.panels.Wrapper;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.ui.paint.RectanglePainter;
+import com.intellij.ui.picker.ColorListener;
 import com.intellij.ui.popup.PopupFactoryImpl;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
@@ -95,58 +88,31 @@ import java.util.function.Supplier;
 import static com.intellij.internal.inspector.UiInspectorUtil.collectAnActionInfo;
 import static com.intellij.openapi.actionSystem.ex.CustomComponentAction.ACTION_KEY;
 
-public class UiInspectorAction extends ToggleAction implements DumbAware, LightEditCompatible {
+public class UiInspectorAction extends DumbAwareAction implements LightEditCompatible {
   private static final String CLICK_INFO = "CLICK_INFO";
   private static final String CLICK_INFO_POINT = "CLICK_INFO_POINT";
   private static final String RENDERER_BOUNDS = "clicked renderer";
   private static final int MAX_DEEPNESS_TO_DISCOVER_FIELD_NAME = 8;
-  private UiInspector myInspector;
 
   public UiInspectorAction() {
-    if (Boolean.getBoolean("idea.ui.debug.mode")) {
-      ApplicationManager.getApplication().invokeLater(() -> setSelected((Project)null, true));
-    }
+    setEnabledInModalContext(true);
   }
 
   @Override
-  public boolean isSelected(@NotNull AnActionEvent e) {
-    return myInspector != null;
-  }
-
-  @Override
-  public void setSelected(@NotNull AnActionEvent e, boolean state) {
-    setSelected(e.getProject(), state);
-  }
-
-  void setSelected(@Nullable Project project, boolean state) {
-    if (state) {
-      if (myInspector == null) {
-        myInspector = new UiInspector(project);
-      }
-
-      UiInspectorNotification[] existing =
-        NotificationsManager.getNotificationsManager().getNotificationsOfType(UiInspectorNotification.class, null);
-      if (existing.length == 0 && !Boolean.getBoolean("idea.ui.debug.mode")) {
-        Notifications.Bus.notify(new UiInspectorNotification(), null);
-      }
+  public void actionPerformed(@NotNull AnActionEvent e) {
+    InputEvent event = e.getInputEvent();
+    Component component = e.getData(PlatformDataKeys.CONTEXT_COMPONENT);
+    if (event instanceof MouseEvent && event.getComponent() != null) {
+      component = UIUtil.getDeepestComponentAt(event.getComponent(), ((MouseEvent)event).getX(), ((MouseEvent)event).getY());
     }
-    else {
-      UiInspector inspector = myInspector;
-      myInspector = null;
-      if (inspector != null) {
-        Disposer.dispose(inspector);
-      }
+    if (component == null) {
+      component = IdeFocusManager.getInstance(e.getProject()).getFocusOwner();
     }
+    assert component != null;
+    new UiInspector(e.getProject()).showInspector(e.getProject(), component);
   }
 
-  private static final class UiInspectorNotification extends Notification {
-    private UiInspectorNotification() {
-      super(Notifications.SYSTEM_MESSAGES_GROUP_ID, "UI Inspector", "Control-Alt-Click to view component info!",
-            NotificationType.INFORMATION);
-    }
-  }
-
-  private static final class InspectorWindow extends JDialog {
+  private static final class InspectorWindow extends JDialog implements Disposable {
     private InspectorTable myInspectorTable;
     @NotNull private final List<Component> myComponents = new ArrayList<>();
     private List<? extends PropertyBean> myInfo;
@@ -213,7 +179,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
       myInspectorTable = new InspectorTable(component);
       myHierarchyTree = new HierarchyTree(component) {
         @Override
-        public void onComponentsChanged(List<Component> components) {
+        public void onComponentsChanged(List<? extends Component> components) {
           switchComponentsInfo(components);
           updateHighlighting();
         }
@@ -320,7 +286,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
       return myInspectorTable;
     }
 
-    private void switchComponentsInfo(@NotNull List<Component> components) {
+    private void switchComponentsInfo(@NotNull List<? extends Component> components) {
       if (components.isEmpty()) return;
       myComponents.clear();
       myComponents.addAll(components);
@@ -345,6 +311,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
       super.dispose();
       DialogWrapper.cleanupRootPane(rootPane);
       DialogWrapper.cleanupWindowListeners(this);
+      Disposer.dispose(this);
     }
 
     public void close() {
@@ -489,7 +456,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
           append("data-provider", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
         }
         componentNode.setText(toString());
-        setIcon(createColorIcon(component.getBackground(), component.getForeground()));
+        setIcon(UiInspectorIcons.findIconFor(component));
       }
       if (value instanceof HierarchyTree.ClickInfoNode) {
         append(value.toString());
@@ -625,7 +592,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
 
     public abstract void onClickInfoChanged(List<? extends PropertyBean> info);
 
-    public abstract void onComponentsChanged(List<Component> components);
+    public abstract void onComponentsChanged(List<? extends Component> components);
 
     private static final class ComponentNode extends DefaultMutableTreeNode  {
       private final Component myComponent;
@@ -779,8 +746,23 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
           Component comp = table.getCellRenderer(row, column).getTableCellRendererComponent(table, value, false, false, row, column);
+          Object realValue = table.getModel().getValueAt(row, column);
           if (comp instanceof JLabel) {
             value = ((JLabel)comp).getText();
+          }
+          if (realValue instanceof Color) {
+            Rectangle cellRect = table.getCellRect(row, column, true);
+            ColorPicker.showColorPickerPopup(null, (Color)realValue, new ColorListener() {
+              @Override
+              public void colorChanged(Color color, Object source) {
+                if (component != null) {
+                  component.setBackground(color);
+                  String name = myModel.myProperties.get(row).propertyName;
+                  myModel.myProperties.set(row, new PropertyBean(name, color));
+                }
+              }
+            }, new RelativePoint(table, new Point(cellRect.x + JBUI.scale(6), cellRect.y + cellRect.height)));
+            return null;
           }
           Component result = super.getTableCellEditorComponent(table, value, isSelected, row, column);
           ((JComponent)result).setBorder(BorderFactory.createLineBorder(JBColor.GRAY, 1));
@@ -836,7 +818,7 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
           changed = ((InspectorTableModel)model).myProperties.get(row).changed;
         }
 
-        final Color fg = isSelected ? table.getSelectionForeground() : changed ? JBUI.CurrentTheme.Link.linkColor() : table.getForeground();
+        final Color fg = isSelected ? table.getSelectionForeground() : changed ? JBUI.CurrentTheme.Link.Foreground.ENABLED : table.getForeground();
         final JBFont font = JBFont.label();
         setFont(changed ? font.asBold() : font);
         setForeground(fg);
@@ -1295,6 +1277,9 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
     return JBUIScale.scaleIcon(new ColorsIcon(11, color1, color2));
   }
 
+  private static Icon createComponentIcon(Component component) {
+    return UiInspectorIcons.findIconFor(component);
+  }
 
   private static class InspectorTableModel extends AbstractTableModel {
 
@@ -1894,13 +1879,17 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
     return UIUtil.getClientProperty(c, ACTION_KEY);
   }
 
+  static void showUiInspectorForEvent(@Nullable Project project, Component component) {
+    new UiInspector(project).showInspector(project, component);
+  }
+
   private static class UiInspector implements AWTEventListener, Disposable {
 
     private Project myProject;
 
     UiInspector(@Nullable Project project) {
       myProject = project;
-      Toolkit.getDefaultToolkit().addAWTEventListener(this, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.CONTAINER_EVENT_MASK);
+      Toolkit.getDefaultToolkit().addAWTEventListener(this, AWTEvent.CONTAINER_EVENT_MASK);
     }
 
     @Override
@@ -1914,7 +1903,8 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
     }
 
     public void showInspector(@Nullable Project project, @NotNull Component c) {
-      Window window = new InspectorWindow(project, c);
+      InspectorWindow window = new InspectorWindow(project, c);
+      Disposer.register(window, this);
       if (DimensionService.getInstance().getSize(InspectorWindow.getDimensionServiceKey()) == null) {
         window.pack();
       }
@@ -2080,5 +2070,66 @@ public class UiInspectorAction extends ToggleAction implements DumbAware, LightE
       return "ArrayTable!";
     }
     throw new UnsupportedOperationException(type.toString());
+  }
+
+  static class UiInspectorIcons {
+    private static final Map<Class<?>, Icon> COMPONENT_MAPPING = new HashMap<>();
+    private static @NotNull Icon load(@NotNull String path) {
+      return load(path, null);
+    }
+
+    private static @NotNull Icon load(@NotNull String path, Class<?> cls) {
+      Icon icon = IconLoader.getIcon("com/intellij/internal/inspector/icons/" + path, UiInspectorAction.class);
+      if (cls != null) {
+        COMPONENT_MAPPING.put(cls, icon);
+      }
+      return icon;
+    }
+    static {
+      load("button.svg", JButton.class);
+      load("checkBox.svg", JCheckBox.class);
+      load("comboBox.svg", JComboBox.class);
+      load("editorPane.svg", JEditorPane.class);
+      load("formattedTextField.svg", JFormattedTextField.class);
+      load("label.svg", JLabel.class);
+      load("list.svg", JList.class);
+      load("panel.svg", JPanel.class);
+      load("passwordField.svg", JPasswordField.class);
+      load("progressbar.svg", JProgressBar.class);
+      load("radioButton.svg", JRadioButton.class);
+      load("scrollbar.svg", JScrollBar.class);
+      load("scrollPane.svg", JScrollPane.class);
+      load("separator.svg", JSeparator.class);
+      load("slider.svg", JSlider.class);
+      load("spinner.svg", JSpinner.class);
+      load("splitPane.svg", JSplitPane.class);
+      load("tabbedPane.svg", JTabbedPane.class);
+      load("table.svg", JTable.class);
+      load("textArea.svg", JTextArea.class);
+      load("textField.svg", JTextField.class);
+      load("textPane.svg", JTextPane.class);
+      load("toolbar.svg", JToolBar.class);
+      //load("toolbarSeparator.svg");
+      load("tree.svg", JTree.class);
+    }
+
+    static final @NotNull Icon Kotlin = load("kotlin.svg");
+    static final @NotNull Icon Unknown = load("unknown.svg");
+
+    public static Icon findIconFor(Component component) {
+      Class<?> aClass = component.getClass();
+      Icon icon = null;
+      while (icon == null && aClass != null) {
+        icon = COMPONENT_MAPPING.get(aClass);
+        aClass = aClass.getSuperclass();
+      }
+      if (icon == null) icon = Unknown;
+
+      if (ComponentUtil.findParentByCondition(component, (c) -> c.getClass() == DialogPanel.class) != null) {
+        Icon kotlinIcon = ((ScalableIcon)Kotlin).scale(0.5f);
+        return new RowIcon(icon, IconUtil.toSize(kotlinIcon, icon.getIconWidth(), icon.getIconHeight()));
+      }
+      return icon;
+    }
   }
 }

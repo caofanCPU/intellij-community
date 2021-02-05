@@ -80,6 +80,8 @@ public class FileTypesTest extends HeavyPlatformTestCase {
     myOldIgnoredFilesList = myFileTypeManager.getIgnoredFilesList();
     FileTypeManagerImpl.reDetectAsync(true);
     ConflictingFileTypeMappingTracker.onConflict(ConflictingFileTypeMappingTracker.ConflictPolicy.THROW);
+    // StdFileTypes.JSPX is assigned to PLAIN_TEXT in community
+    //noinspection deprecation
     Assume.assumeTrue("Test must be run under community classpath because otherwise everything would break thanks to weird HelmYamlLanguage which is created on each HelmYamlFileType registration which happens a lot in this class",
                       StdFileTypes.JSPX == StdFileTypes.PLAIN_TEXT);
   }
@@ -1278,5 +1280,19 @@ public class FileTypesTest extends HeavyPlatformTestCase {
         assertFalse("FileType constructor must be non-public to avoid duplicates but got: " + constructor, Modifier.isPublic(constructor.getModifiers()));
       }
     }
+  }
+
+  public void testDetectedAsTextMustNotStuckWithUnknownFileTypeWhenShrinkedToZeroLength() throws IOException {
+    File f = createTempFile("xx.lkjlkjlkjlj", "a");
+    VirtualFile virtualFile = getVirtualFile(f);
+    assertEquals(PlainTextFileType.INSTANCE, virtualFile.getFileType());
+
+    setBinaryContent(virtualFile, new byte[0]);
+    myFileTypeManager.drainReDetectQueue();
+    assertEquals(UnknownFileType.INSTANCE, virtualFile.getFileType());
+
+    setBinaryContent(virtualFile, "qwe\newq".getBytes(StandardCharsets.UTF_8));
+    myFileTypeManager.drainReDetectQueue();
+    assertEquals(PlainTextFileType.INSTANCE, virtualFile.getFileType());
   }
 }

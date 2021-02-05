@@ -71,8 +71,8 @@ public abstract class PyUnresolvedReferencesVisitor extends PyInspectionVisitor 
 
   public static final Key<PyInspection> INSPECTION = Key.create("PyUnresolvedReferencesVisitor.inspection");
 
-  PyUnresolvedReferencesVisitor(@Nullable ProblemsHolder holder,
-                                @NotNull LocalInspectionToolSession session, List<String> ignoredIdentifiers) {
+  protected PyUnresolvedReferencesVisitor(@Nullable ProblemsHolder holder,
+                                          @NotNull LocalInspectionToolSession session, List<String> ignoredIdentifiers) {
     super(holder, session);
     myIgnoredIdentifiers = ImmutableSet.copyOf(ignoredIdentifiers);
   }
@@ -972,8 +972,13 @@ public abstract class PyUnresolvedReferencesVisitor extends PyInspectionVisitor 
     }
     else if (type instanceof PyModuleType) {
       PyFile file = ((PyModuleType)type).getModule();
-      result.add(new AddFunctionQuickFix(refText, file.getName()));
-      getCreateClassFix(refText, element);
+      LocalQuickFix createClassQuickFix = getCreateClassFix(refText, element);
+      if (createClassQuickFix != null) {
+        result.add(createClassQuickFix);
+      }
+      else {
+        result.add(new AddFunctionQuickFix(refText, file.getName()));
+      }
     }
     return result;
   }
@@ -1027,18 +1032,21 @@ public abstract class PyUnresolvedReferencesVisitor extends PyInspectionVisitor 
     return result;
   }
 
-  Iterable<LocalQuickFix> getAutoImportFixes(PyElement node, PsiReference reference, PsiElement element) {
+  protected Iterable<LocalQuickFix> getAutoImportFixes(PyElement node, PsiReference reference, PsiElement element) {
     return Collections.emptyList();
   }
 
   LocalQuickFix getCreateClassFix(@NonNls String refText, PsiElement element) {
-    if (refText.length() > 2 && Character.isUpperCase(refText.charAt(0)) && !StringUtil.toUpperCase(refText).equals(refText) &&
-        PsiTreeUtil.getParentOfType(element, PyImportStatementBase.class) == null) {
+    if (refText.length() > 2 && Character.isUpperCase(refText.charAt(0)) && !StringUtil.toUpperCase(refText).equals(refText)) {
       PsiElement anchor = element;
       if (element instanceof PyQualifiedExpression) {
-        final PyExpression expr = ((PyQualifiedExpression)element).getQualifier();
-        if (expr != null) {
-          final PyType type = myTypeEvalContext.getType(expr);
+        PyExpression qualifier = ((PyQualifiedExpression)element).getQualifier();
+        if (qualifier == null) {
+          final PyFromImportStatement fromImport = PsiTreeUtil.getParentOfType(element, PyFromImportStatement.class);
+          if (fromImport != null) qualifier = fromImport.getImportSource();
+        }
+        if (qualifier != null) {
+          final PyType type = myTypeEvalContext.getType(qualifier);
           if (type instanceof PyModuleType) {
             anchor = ((PyModuleType)type).getModule();
           }

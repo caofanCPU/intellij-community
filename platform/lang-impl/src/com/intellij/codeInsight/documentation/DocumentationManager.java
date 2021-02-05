@@ -148,6 +148,11 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
   }
 
   @Override
+  protected String getToolwindowTitle() {
+    return CodeInsightBundle.message("documentation.tool.window.title");
+  }
+
+  @Override
   protected DocumentationComponent createComponent() {
     return new DocumentationComponent(this);
   }
@@ -695,7 +700,7 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
     }
   }
 
-  protected void doShowJavaDocInfo(@NotNull CompletableFuture<PsiElement> elementFuture,
+  protected void doShowJavaDocInfo(@NotNull CompletableFuture<? extends PsiElement> elementFuture,
                                    boolean requestFocus,
                                    @NotNull PopupUpdateProcessor updateProcessor,
                                    PsiElement originalElement,
@@ -1115,7 +1120,6 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
           component.clearHistory();
         }
         callback.setDone();
-        getProject().getMessageBus().syncPublisher(DocInfoListener.TOPIC).onDocumentationRendered();
       });
     }, 10);
     return callback;
@@ -1266,8 +1270,8 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
     else if (url.startsWith(DocumentationManagerProtocol.PSI_ELEMENT_PROTOCOL)) {
       Pair<@NotNull PsiElement, @Nullable String> target = getTarget(psiElement, url);
       if (target != null) {
-        cancelAndFetchDocInfo(component,
-                              new MyCollector(myProject, target.first, null, target.second, false, false));
+        cancelAndFetchDocInfoByLink(component,
+                                    new MyCollector(myProject, target.first, null, target.second, false, false));
       }
     }
     else {
@@ -1281,7 +1285,7 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
           if (externalHandler.canFetchDocumentationLink(url)) {
             String ref = externalHandler.extractRefFromLink(url);
             PsiElement finalPsiElement = psiElement;
-            cancelAndFetchDocInfo(component, new DocumentationCollector(finalPsiElement, url, ref, p, false) {
+            cancelAndFetchDocInfoByLink(component, new DocumentationCollector(finalPsiElement, url, ref, p, false) {
               @Override
               public String getDocumentation() {
                 return externalHandler.fetchExternalDocumentation(url, finalPsiElement);
@@ -1297,7 +1301,7 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
       }
 
       if (!processed) {
-        cancelAndFetchDocInfo(component, new DocumentationCollector(psiElement, url, null, provider, false) {
+        cancelAndFetchDocInfoByLink(component, new DocumentationCollector(psiElement, url, null, provider, false) {
           @Override
           public String getDocumentation() {
             if (BrowserUtil.isAbsoluteURL(url)) {
@@ -1313,6 +1317,10 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
     }
 
     component.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+  }
+
+  protected ActionCallback cancelAndFetchDocInfoByLink(@NotNull DocumentationComponent component, @NotNull DocumentationCollector provider) {
+    return cancelAndFetchDocInfo(component, provider);
   }
 
   public Project getProject() {
@@ -1346,14 +1354,14 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
   }
 
   @Override
-  protected void doUpdateComponent(@NotNull CompletableFuture<PsiElement> elementFuture,
+  protected void doUpdateComponent(@NotNull CompletableFuture<? extends PsiElement> elementFuture,
                                    PsiElement originalElement,
                                    DocumentationComponent component) {
     doUpdateComponent(elementFuture, originalElement, component, false);
   }
 
   @Override
-  protected void doUpdateComponent(@NotNull CompletableFuture<PsiElement> elementFuture,
+  protected void doUpdateComponent(@NotNull CompletableFuture<? extends PsiElement> elementFuture,
                                    PsiElement originalElement,
                                    DocumentationComponent component,
                                    boolean onAutoUpdate) {
@@ -1441,8 +1449,8 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
     myTestDocumentationComponent = documentationComponent;
   }
 
-  private abstract static class DocumentationCollector {
-    private final CompletableFuture<PsiElement> myElementFuture;
+  protected abstract static class DocumentationCollector {
+    private final CompletableFuture<? extends PsiElement> myElementFuture;
     final String ref;
     final boolean onAutoUpdate;
     final ActionCallback actionCallback;
@@ -1467,7 +1475,7 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
       this(CompletableFuture.completedFuture(element), effectiveUrl, ref, actionCallback, provider, onAutoUpdate);
     }
 
-    DocumentationCollector(@NotNull CompletableFuture<PsiElement> elementFuture,
+    DocumentationCollector(@NotNull CompletableFuture<? extends PsiElement> elementFuture,
                            String effectiveUrl,
                            String ref,
                            ActionCallback actionCallback,
@@ -1521,7 +1529,7 @@ public class DocumentationManager extends DockablePopupManager<DocumentationComp
     }
 
     MyCollector(@NotNull Project project,
-                @NotNull CompletableFuture<PsiElement> elementSupplier,
+                @NotNull CompletableFuture<? extends PsiElement> elementSupplier,
                 PsiElement originalElement,
                 String ref,
                 ActionCallback actionCallback,

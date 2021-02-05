@@ -12,6 +12,7 @@ import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.actionSystem.impl.ActionMenu;
 import com.intellij.openapi.actionSystem.impl.PresentationFactory;
+import com.intellij.openapi.actionSystem.impl.Utils;
 import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.diagnostic.Logger;
@@ -218,7 +219,7 @@ public final class IdeKeyEventDispatcher implements Disposable {
       return false;
     }
 
-    DataContext dataContext = dataManager.getDataContext();
+    DataContext dataContext = Utils.wrapDataContext(dataManager.getDataContext());
 
     myContext.setDataContext(dataContext);
     myContext.setFocusOwner(focusOwner);
@@ -737,8 +738,9 @@ public final class IdeKeyEventDispatcher implements Disposable {
       return getUnavailableMessage("'" + actionNames.get(0) + "'", false);
     }
     else {
+      @NlsSafe String join = String.join(", ", actionNames);
       return getUnavailableMessage(IdeBundle.message("dumb.balloon.none.of.the.following.actions"), true) +
-             ": " + String.join(", ", actionNames);
+             ": " + join;
     }
   }
 
@@ -869,12 +871,23 @@ public final class IdeKeyEventDispatcher implements Disposable {
       }
 
       if (each.startsWith(sc)) {
+        if (each instanceof KeyboardShortcut && ((KeyboardShortcut)each).getSecondKeyStroke() != null) {
+          long startedAt = System.currentTimeMillis();
+
+          Presentation presentation = myPresentationFactory.getPresentation(action);
+          AnActionEvent actionEvent = myActionProcessor.createEvent(
+            myContext.getInputEvent(), myContext.getDataContext(), ActionPlaces.KEYBOARD_SHORTCUT, presentation,
+            ActionManager.getInstance());
+          ActionUtil.performDumbAwareUpdate(LaterInvocator.isInModalContext(), action, actionEvent, false);
+
+          logTimeMillis(startedAt, action);
+          if (!presentation.isEnabled()) {
+            continue;
+          }
+          myContext.setHasSecondStroke(true);
+        }
         if (!myContext.getActions().contains(action)) {
           myContext.getActions().add(action);
-        }
-
-        if (each instanceof KeyboardShortcut && ((KeyboardShortcut)each).getSecondKeyStroke() != null) {
-          myContext.setHasSecondStroke(true);
         }
       }
     }

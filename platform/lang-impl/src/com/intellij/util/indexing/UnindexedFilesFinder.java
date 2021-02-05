@@ -4,12 +4,12 @@ package com.intellij.util.indexing;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.openapi.fileTypes.ex.FileTypeManagerEx;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWithId;
 import com.intellij.openapi.vfs.newvfs.impl.VirtualFileSystemEntry;
 import com.intellij.psi.search.FileTypeIndex;
-import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -56,20 +56,18 @@ final class UnindexedFilesFinder {
         return null;
       }
 
-      List<ID<?, ?>> applicableIndexes = new SmartList<>();
-      Set<ID<?, ?>> indexesProvidedByInfrastructureExtension = new HashSet<>();
+      AtomicBoolean indexesWereProvidedByInfrastructureExtension = new AtomicBoolean();
       AtomicLong timeProcessingUpToDateFiles = new AtomicLong();
       AtomicLong timeUpdatingContentLessIndexes = new AtomicLong();
       AtomicLong timeIndexingWithoutContent = new AtomicLong();
 
       IndexedFileImpl indexedFile = new IndexedFileImpl(file, myProject);
       if (file instanceof VirtualFileSystemEntry && ((VirtualFileSystemEntry)file).isFileIndexed()) {
-        int inputId = Math.abs(FileBasedIndexImpl.getIdMaskingNonIdBasedFile(file));
+        int inputId = FileBasedIndex.getFileId(file);
 
         boolean wasInvalidated = false;
         if (myRunExtensionsForFilesMarkedAsIndexed && myShouldProcessUpToDateFiles) {
           List<ID<?, ?>> ids = IndexingStamp.getNontrivialFileIndexedStates(inputId);
-          applicableIndexes.addAll(ids);
           for (FileBasedIndexInfrastructureExtension.FileIndexingStatusProcessor processor : myStateProcessors) {
             for (ID<?, ?> id : ids) {
               if (myFileBasedIndex.needsFileContentLoading(id)) {
@@ -88,8 +86,7 @@ final class UnindexedFilesFinder {
         if (!wasInvalidated) {
           IndexingStamp.flushCache(inputId);
           return new UnindexedFileStatus(false,
-                                         applicableIndexes,
-                                         indexesProvidedByInfrastructureExtension,
+                                         false,
                                          timeProcessingUpToDateFiles.get(),
                                          timeUpdatingContentLessIndexes.get(),
                                          timeIndexingWithoutContent.get());
@@ -98,9 +95,9 @@ final class UnindexedFilesFinder {
 
       AtomicBoolean shouldIndex = new AtomicBoolean();
 
-      FileBasedIndexImpl.getFileTypeManager().freezeFileTypeTemporarilyIn(file, () -> {
+      FileTypeManagerEx.getInstanceEx().freezeFileTypeTemporarilyIn(file, () -> {
         boolean isDirectory = file.isDirectory();
-        int inputId = Math.abs(FileBasedIndexImpl.getIdMaskingNonIdBasedFile(file));
+        int inputId = FileBasedIndex.getFileId(file);
         FileIndexingState fileTypeIndexState = null;
         if (!isDirectory && !myFileBasedIndex.isTooLarge(file)) {
           if ((fileTypeIndexState = myFileTypeIndex.getIndexingStateForFile(inputId, indexedFile)) == FileIndexingState.OUT_DATED) {
@@ -109,7 +106,6 @@ final class UnindexedFilesFinder {
           }
           else {
             final List<ID<?, ?>> affectedIndexCandidates = myFileBasedIndex.getAffectedIndexCandidates(indexedFile);
-            applicableIndexes.addAll(affectedIndexCandidates);
             //noinspection ForLoopReplaceableByForEach
             for (int i = 0, size = affectedIndexCandidates.size(); i < size; ++i) {
               final ID<?, ?> indexId = affectedIndexCandidates.get(i);
@@ -147,7 +143,7 @@ final class UnindexedFilesFinder {
                       timeIndexingWithoutContent.addAndGet(System.nanoTime() - nowTime);
                     }
                     if (wasIndexedByInfrastructure) {
-                      indexesProvidedByInfrastructureExtension.add(indexId);
+                      indexesWereProvidedByInfrastructureExtension.set(true);
                     }
                     else {
                       shouldIndex.set(true);
@@ -187,13 +183,12 @@ final class UnindexedFilesFinder {
         }
         IndexingStamp.flushCache(inputId);
 
-        if (!shouldIndex.get() && file instanceof VirtualFileSystemEntry) {
-          ((VirtualFileSystemEntry)file).setFileIndexed(true);
+        if (!shouldIndex.get()) {
+          IndexingFlag.setFileIndexed(file);
         }
       });
       return new UnindexedFileStatus(shouldIndex.get(),
-                                     applicableIndexes,
-                                     indexesProvidedByInfrastructureExtension,
+                                     indexesWereProvidedByInfrastructureExtension.get(),
                                      timeProcessingUpToDateFiles.get(),
                                      timeUpdatingContentLessIndexes.get(),
                                      timeIndexingWithoutContent.get());

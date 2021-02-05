@@ -7,8 +7,12 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.application.invokeLater
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.EditorNotifications
 import org.fest.swing.exception.ComponentLookupException
@@ -19,7 +23,9 @@ import training.commands.kotlin.TaskContext
 import training.commands.kotlin.TaskRuntimeContext
 import training.commands.kotlin.TaskTestContext
 import training.learn.ActionsRecorder
+import training.learn.LearnBundle
 import training.learn.lesson.LessonManager
+import training.statistic.StatisticBase
 import java.awt.Component
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
@@ -57,32 +63,84 @@ internal class TaskContextImpl(private val lessonExecutor: LessonExecutor,
   override fun proposeRestore(restoreCheck: TaskRuntimeContext.() -> RestoreNotification?) {
     restoreState {
       // restoreState is used to trigger by any IDE state change and check restore proposal is needed
-      this@TaskContextImpl.proposeRestoreCheck(restoreCheck)
+      this@TaskContextImpl.checkAndShowNotificationIfNeeded(needToLog = true, restoreCheck) {
+        LessonManager.instance.setRestoreNotification(it)
+      }
       return@restoreState false
     }
   }
 
-  private fun proposeRestoreCheck(restoreCheck: TaskRuntimeContext.() -> RestoreNotification?) {
+  private fun checkEditor(): RestoreNotification? {
+    fun restoreNotification(file: VirtualFile) =
+      RestoreNotification(LearnBundle.message("learn.restore.notification.wrong.editor"),
+                          LearnBundle.message("learn.restore.get.back.link.text")) {
+        invokeLater {
+          FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, file), true)
+        }
+      }
+
+    val selectedTextEditor = FileEditorManager.getInstance(project).selectedTextEditor ?: return null
+    if (lessonExecutor.lesson.lessonType.isSingleEditor) {
+      if (selectedTextEditor != lessonExecutor.predefinedEditor) {
+        val file = lessonExecutor.predefinedFile ?: return null
+        return restoreNotification(file)
+      }
+    }
+    else {
+      val file = runtimeContext.previous.file ?: return null
+      val currentFile = FileDocumentManager.getInstance().getFile(selectedTextEditor.document)
+      if (file != currentFile) {
+        return restoreNotification(file)
+      }
+    }
+    return null
+  }
+
+  override fun showWarning(text: String, restoreTaskWhenResolved: Boolean, warningRequired: TaskRuntimeContext.() -> Boolean) {
+    restoreState(taskId, delayMillis = defaultRestoreDelay) {
+      val notificationRequired: TaskRuntimeContext.() -> RestoreNotification? = {
+        if (warningRequired()) RestoreNotification(text) {} else null
+      }
+      val warningResolved = this@TaskContextImpl.checkAndShowNotificationIfNeeded(needToLog = !restoreTaskWhenResolved,
+                                                                                  notificationRequired) {
+        LessonManager.instance.setWarningNotification(it)
+      }
+      warningResolved && restoreTaskWhenResolved
+    }
+  }
+
+  /**
+   * Returns true if already shown notification has been cleared
+   */
+  private fun checkAndShowNotificationIfNeeded(needToLog: Boolean, notificationRequired: TaskRuntimeContext.() -> RestoreNotification?,
+                                               setNotification: (RestoreNotification) -> Unit): Boolean {
     val file = lessonExecutor.virtualFile
-    val proposal = restoreCheck(runtimeContext)
+    val proposal = checkEditor() ?: notificationRequired(runtimeContext)
     if (proposal == null) {
       if (LessonManager.instance.shownRestoreNotification != null) {
         LessonManager.instance.clearRestoreMessage()
+        return true
       }
     }
     else {
       if (proposal.message != LessonManager.instance.shownRestoreNotification?.message) {
         EditorNotifications.getInstance(runtimeContext.project).updateNotifications(file)
-        LessonManager.instance.setRestoreNotification(proposal)
+        setNotification(proposal)
+        if(needToLog) {
+          StatisticBase.logRestorePerformed(lessonExecutor.lesson, lessonExecutor.currentTaskIndex)
+        }
       }
     }
+    return false
   }
 
   override fun text(@Language("HTML") text: String, useBalloon: LearningBalloonConfig?) {
-    lessonExecutor.text(text)
+    if (useBalloon == null || useBalloon.duplicateMessage)
+      lessonExecutor.text(text)
+
     if (useBalloon != null) {
-      val ui = runtimeContext.previous.ui as? JComponent ?: return
-      LessonExecutorUtil.showBalloonMessage(text, ui, useBalloon, runtimeContext.taskDisposable)
+      val ui = useBalloon.highlightingComponent ?: runtimeContext.previous.ui as? JComponent ?: return
+      LessonExecutorUtil.showBalloonMessage(text, ui, useBalloon, runtimeContext.actionsRecorder, lessonExecutor.project)
     }
   }
 

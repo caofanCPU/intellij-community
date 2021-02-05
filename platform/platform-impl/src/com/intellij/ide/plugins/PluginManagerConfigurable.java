@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins;
 
 import com.intellij.execution.process.ProcessIOExecutorService;
@@ -7,8 +7,6 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.CopyProvider;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeBundle;
-import com.intellij.ide.plugins.auth.PluginAuthService;
-import com.intellij.ide.plugins.auth.PluginAuthSubscriber;
 import com.intellij.ide.plugins.marketplace.MarketplaceRequests;
 import com.intellij.ide.plugins.newui.*;
 import com.intellij.ide.util.PropertiesComponent;
@@ -76,8 +74,8 @@ import java.util.function.Supplier;
 /**
  * @author Alexander Lobas
  */
-public class PluginManagerConfigurable
-  implements SearchableConfigurable, Configurable.NoScroll, Configurable.NoMargin, Configurable.TopComponentProvider, PluginAuthSubscriber {
+public final class PluginManagerConfigurable
+  implements SearchableConfigurable, Configurable.NoScroll, Configurable.NoMargin, Configurable.TopComponentProvider {
 
   private static final Logger LOG = Logger.getInstance(PluginManagerConfigurable.class);
 
@@ -140,7 +138,6 @@ public class PluginManagerConfigurable
 
   public PluginManagerConfigurable() {
     this((Project)null);
-    PluginAuthService.INSTANCE.subscribe(this);
   }
 
   /**
@@ -264,12 +261,8 @@ public class PluginManagerConfigurable
     actions.addSeparator();
     actions.add(new ChangePluginStateAction(false));
     actions.add(new ChangePluginStateAction(true));
-    return actions;
-  }
 
-  @Override
-  public void pluginAuthCallback() {
-    ApplicationManager.getApplication().invokeLater(this::resetPanelsWithoutClearCache, ModalityState.any());
+    return actions;
   }
 
   private static void showRightBottomPopup(@NotNull Component component, @NotNull @Nls String title, @NotNull ActionGroup group) {
@@ -323,10 +316,6 @@ public class PluginManagerConfigurable
   private void resetPanels() {
     CustomPluginRepositoryService.getInstance().clearCache();
 
-    resetPanelsWithoutClearCache();
-  }
-
-  void resetPanelsWithoutClearCache(){
     myTagsSorted = null;
     myVendorsSorted = null;
 
@@ -482,12 +471,12 @@ public class PluginManagerConfigurable
             if (word == null) return null;
             switch (word) {
               case TAG:
-                if (ContainerUtil.isEmpty(myTagsSorted)) { // XXX
+                if (myTagsSorted == null || myTagsSorted.isEmpty()) {
                   Set<String> allTags = new HashSet<>();
                   for (IdeaPluginDescriptor descriptor : CustomPluginRepositoryService.getInstance().getCustomRepositoryPlugins()) {
                     if (descriptor instanceof PluginNode) {
                       List<String> tags = ((PluginNode)descriptor).getTags();
-                      if (!ContainerUtil.isEmpty(tags)) {
+                      if (tags != null && !tags.isEmpty()) {
                         allTags.addAll(tags);
                       }
                     }
@@ -506,7 +495,7 @@ public class PluginManagerConfigurable
               case SORT_BY:
                 return Arrays.asList("downloads", "name", "rating", "updated");
               case ORGANIZATION:
-                if (ContainerUtil.isEmpty(myVendorsSorted)) { // XXX
+                if (myVendorsSorted == null || myVendorsSorted.isEmpty()) {
                   LinkedHashSet<String> vendors = new LinkedHashSet<>();
                   try {
                     ProcessIOExecutorService.INSTANCE.submit(() -> {
@@ -843,7 +832,7 @@ public class PluginManagerConfigurable
           }
 
           if (!downloaded.descriptors.isEmpty()) {
-            myUpdateAll.setListener(new LinkListener<Object>() {
+            myUpdateAll.setListener(new LinkListener<>() {
               @Override
               public void linkSelected(LinkLabel<Object> aSource, Object aLinkData) {
                 myUpdateAll.setEnabled(false);
@@ -1195,7 +1184,7 @@ public class PluginManagerConfigurable
     }
   }
 
-  private static void applyUpdates(@NotNull PluginsGroupComponent panel, @NotNull Collection<IdeaPluginDescriptor> updates) {
+  private static void applyUpdates(@NotNull PluginsGroupComponent panel, @NotNull Collection<? extends IdeaPluginDescriptor> updates) {
     for (IdeaPluginDescriptor descriptor : updates) {
       for (UIPluginGroup group : panel.getGroups()) {
         ListPluginComponent component = group.findComponent(descriptor);
@@ -1660,8 +1649,6 @@ public class PluginManagerConfigurable
     InstalledPluginsState.getInstance().runShutdownCallback();
 
     InstalledPluginsState.getInstance().resetChangesAppliedWithoutRestart();
-
-    PluginAuthService.INSTANCE.unsubscribe(this);
   }
 
   @Override

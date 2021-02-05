@@ -60,6 +60,14 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
     buildContext.ant.copy(todir: "$targetDirectory/bin") {
       fileset(dir: "$buildContext.paths.communityHome/build/conf/ideaCE/common/bin")
     }
+    bundleExternalPlugins(buildContext, targetDirectory)
+  }
+
+  protected void bundleExternalPlugins(BuildContext buildContext, String targetDirectory) {
+    //temporary unbundle VulnerabilitySearch
+    //ExternalPluginBundler.bundle('VulnerabilitySearch',
+    //                             "$buildContext.paths.communityHome/build/dependencies",
+    //                             buildContext, targetDirectory)
   }
 
   @Override

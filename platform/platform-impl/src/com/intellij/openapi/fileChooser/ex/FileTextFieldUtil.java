@@ -81,7 +81,7 @@ public final class FileTextFieldUtil {
     }
 
 
-    ReadAction.run(new ThrowableRunnable<RuntimeException>() {
+    ReadAction.run(new ThrowableRunnable<>() {
       @Override
       public void run() {
         if (result.current != null) {
@@ -218,9 +218,9 @@ public final class FileTextFieldUtil {
 
     private final JTextField myField;
     private final Document myDocument;
-    private final Consumer<FileLookup.LookupFile> mySetText;
+    private final @NotNull Consumer<? super FileLookup.LookupFile> mySetText;
 
-    public TextFieldDocumentOwner(@NotNull JTextField field, @NotNull Consumer<FileLookup.LookupFile> setText) {
+    public TextFieldDocumentOwner(@NotNull JTextField field, @NotNull Consumer<? super FileLookup.LookupFile> setText) {
       myField = field;
       myDocument = field.getDocument();
       mySetText = setText;

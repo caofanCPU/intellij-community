@@ -389,7 +389,7 @@ public class VfsUtilCore {
   }
 
   public static @NotNull @NlsSafe String urlToPath(@Nullable String url) {
-    return url == null ? "" : VirtualFileManager.extractPath(url);
+    return URLUtil.urlToPath(url);
   }
 
   /**

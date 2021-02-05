@@ -19,6 +19,7 @@ import com.intellij.psi.impl.FindSuperElementsHelper;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.search.PsiElementProcessorAdapter;
+import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import com.intellij.psi.search.searches.FunctionalExpressionSearch;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
@@ -29,7 +30,6 @@ import com.intellij.util.CommonProcessors;
 import com.intellij.util.Function;
 import com.intellij.util.NullableFunction;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -41,18 +41,10 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class MarkerType {
   private final GutterIconNavigationHandler<PsiElement> handler;
-  private final Function<PsiElement, String> myTooltip;
+  private final Function<? super PsiElement, String> myTooltip;
   @NotNull private final String myDebugName;
 
-  /**
-   * @deprecated use {@link #MarkerType(String, Function, LineMarkerNavigator)} instead
-   */
-  @Deprecated
-  public MarkerType(@NotNull Function<PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator) {
-    this("Unknown", tooltip, navigator);
-  }
-
-  public MarkerType(@NotNull String debugName, @NotNull Function<PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator) {
+  public MarkerType(@NotNull String debugName, @NotNull Function<? super PsiElement, String> tooltip, @NotNull final LineMarkerNavigator navigator) {
     myTooltip = tooltip;
     myDebugName = debugName;
     handler = (e, elt) -> DumbService.getInstance(elt.getProject()).withAlternativeResolveEnabled(() -> navigator.browse(e, elt));
@@ -69,7 +61,7 @@ public class MarkerType {
   }
 
   @NotNull
-  public Function<PsiElement, String> getTooltip() {
+  public Function<? super PsiElement, String> getTooltip() {
     return myTooltip;
   }
 
@@ -147,7 +139,7 @@ public class MarkerType {
 
   @NotNull
   private static <E extends PsiElement> PsiElementProcessor.CollectElementsWithLimit<E> getProcessor(int limit, boolean set) {
-    return set ? new PsiElementProcessor.CollectElementsWithLimit<>(limit, new THashSet<>())
+    return set ? new PsiElementProcessor.CollectElementsWithLimit<>(limit, new HashSet<>())
                : new PsiElementProcessor.CollectElementsWithLimit<>(limit);
   }
 
@@ -400,7 +392,7 @@ public class MarkerType {
     @Override
     public void run(@NotNull final ProgressIndicator indicator) {
       super.run(indicator);
-      ClassInheritorsSearch.search(myClass, ReadAction.compute(myClass::getUseScope), true).forEach(
+      ClassInheritorsSearch.search(myClass, ReadAction.compute(() -> PsiSearchHelper.getInstance(myProject).getUseScope(myClass)), true).forEach(
         new CommonProcessors.CollectProcessor<>() {
           @Override
           public boolean process(final PsiClass o) {

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.xdebugger.impl.frame;
 
 import com.intellij.ide.DataManager;
@@ -17,7 +17,6 @@ import com.intellij.xdebugger.XDebuggerBundle;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.frame.XStackFrame;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
-import com.intellij.xdebugger.impl.ui.DebuggerUIUtil;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueContainerNode;
 import com.intellij.xdebugger.impl.ui.tree.nodes.XValueNodeImpl;
@@ -28,21 +27,33 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.lang.ref.WeakReference;
 import java.util.*;
 
 public class XVariablesView extends XVariablesViewBase implements DataProvider {
-  protected JPanel myComponent;
+  protected BorderLayoutPanel myComponent;
+  private final WeakReference<XDebugSessionImpl> mySession;
 
   public XVariablesView(@NotNull XDebugSessionImpl session) {
     super(session.getProject(), session.getDebugProcess().getEditorsProvider(), session.getValueMarkers());
+    mySession = new WeakReference<>(session);
     myComponent = new BorderLayoutPanel();
-    myComponent.add(super.getPanel());
+    JComponent panel = super.getPanel();
+    JComponent top = createTopPanel();
+    if (top != null) {
+      panel = new BorderLayoutPanel().addToTop(top).addToCenter(panel);
+    }
+    myComponent.add(panel);
     DataManager.registerDataProvider(myComponent, this);
   }
 
   @Override
   public JPanel getPanel() {
     return myComponent;
+  }
+
+  JComponent createTopPanel() {
+    return null;
   }
 
   @Override
@@ -56,7 +67,7 @@ public class XVariablesView extends XVariablesViewBase implements DataProvider {
     }
 
     XStackFrame stackFrame = session.getCurrentStackFrame();
-    DebuggerUIUtil.invokeLater(() -> {
+    ApplicationManager.getApplication().invokeLater(() -> {
       getTree().markNodesObsolete();
       if (stackFrame != null) {
         cancelClear();
@@ -65,7 +76,7 @@ public class XVariablesView extends XVariablesViewBase implements DataProvider {
       else {
         requestClear();
       }
-    });
+    }, session.getProject().getDisposed());
   }
 
   @Override
@@ -108,7 +119,13 @@ public class XVariablesView extends XVariablesViewBase implements DataProvider {
   @Override
   public Object getData(@NotNull @NonNls String dataId) {
     if (CommonDataKeys.VIRTUAL_FILE.is(dataId)) {
-      return getCurrentFile(getTree());
+      XDebugSessionImpl session = mySession.get();
+      if (session != null) {
+        XSourcePosition position = session.getCurrentPosition();
+        if (position != null) {
+          return position.getFile();
+        }
+      }
     }
     return null;
   }

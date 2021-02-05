@@ -1,7 +1,7 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.chat.ui.message
 
-import circlet.client.api.CExternalServicePrincipalDetails
+import circlet.client.api.CApplicationPrincipalDetails
 import circlet.client.api.CPrincipal
 import circlet.client.api.CUserPrincipalDetails
 import circlet.platform.client.resolve
@@ -10,8 +10,10 @@ import com.intellij.ide.plugins.newui.HorizontalLayout
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.space.chat.model.api.SpaceChatItem
+import com.intellij.space.chat.model.api.SpaceChatItemAdditionalFeature
 import com.intellij.space.chat.ui.link
 import com.intellij.space.messages.SpaceBundle
+import com.intellij.space.ui.SpaceAutoUpdatableComponentService
 import com.intellij.space.utils.SpaceUrls
 import com.intellij.space.utils.formatPrettyDateTime
 import com.intellij.space.vcs.review.HtmlEditorPane
@@ -38,20 +40,29 @@ internal class MessageTitleComponent(
     isVisible = false
     createEditButton(message)?.let { add(it) }
     createDeleteButton(message)?.let { add(it) }
+    add(createStartThreadButton(message))
   }
 
   init {
     val authorPanel = HtmlEditorPane().apply {
+      putClientProperty(UIUtil.HIDE_EDITOR_FROM_DATA_CONTEXT_PROPERTY, true)
       setBody(createMessageAuthorChunk(message.author).bold().toString())
     }
-    val timePanel = HtmlEditorPane().apply {
-      foreground = UIUtil.getContextHelpForeground()
-      setBody(HtmlChunk.text(message.created.formatPrettyDateTime()).toString()) // NON-NLS
+    val timePanel = SpaceAutoUpdatableComponentService.createAutoUpdatableComponent {
+      HtmlEditorPane().apply {
+        putClientProperty(UIUtil.HIDE_EDITOR_FROM_DATA_CONTEXT_PROPERTY, true)
+        foreground = UIUtil.getContextHelpForeground()
+        setBody(HtmlChunk.text(message.created.formatPrettyDateTime()).toString()) // NON-NLS
+      }
     }
 
     isOpaque = false
     add(authorPanel)
     add(timePanel)
+    val showResolvedStateFeature = message.additionalFeatures.filterIsInstance<SpaceChatItemAdditionalFeature.ShowResolvedState>().singleOrNull()
+    if (showResolvedStateFeature != null) {
+      add(createResolvedComponent(lifetime, showResolvedStateFeature.resolved))
+    }
     add(actionsPanel)
     launch(lifetime, Ui) {
       delay(2000)
@@ -69,9 +80,9 @@ internal class MessageTitleComponent(
         val user = details.user.resolve()
         user.link()
       }
-      is CExternalServicePrincipalDetails -> {
-        val service = details.service.resolve()
-        HtmlChunk.link(SpaceUrls.service(service), service.name) // NON-NLS
+      is CApplicationPrincipalDetails -> {
+        val app = details.app.resolve()
+        HtmlChunk.link(SpaceUrls.app(app), app.name) // NON-NLS
       }
       else -> {
         HtmlChunk.text(author.name) // NON-NLS
@@ -82,7 +93,11 @@ internal class MessageTitleComponent(
     if (!message.canDelete) {
       return null
     }
-    return InlineIconButton(VcsCodeReviewIcons.Delete, VcsCodeReviewIcons.DeleteHovered).apply {
+    return InlineIconButton(
+      VcsCodeReviewIcons.Delete,
+      VcsCodeReviewIcons.DeleteHovered,
+      tooltip = SpaceBundle.message("chat.message.action.delete.tooltip")
+    ).apply {
       actionListener = ActionListener {
         if (
           MessageDialogBuilder.yesNo(
@@ -102,10 +117,31 @@ internal class MessageTitleComponent(
     if (!message.canEdit) {
       return null
     }
-    return InlineIconButton(AllIcons.General.Inline_edit, AllIcons.General.Inline_edit_hovered).apply {
+    return InlineIconButton(
+      AllIcons.General.Inline_edit,
+      AllIcons.General.Inline_edit_hovered,
+      tooltip = SpaceBundle.message("chat.message.action.edit.tooltip")
+    ).apply {
       actionListener = ActionListener {
         message.startEditing()
       }
     }
+  }
+
+  private fun createStartThreadButton(message: SpaceChatItem): JComponent {
+    val startThreadVm = message.startThreadVm
+    val button = InlineIconButton(
+      VcsCodeReviewIcons.Comment,
+      VcsCodeReviewIcons.CommentHovered,
+      tooltip = SpaceBundle.message("chat.message.action.start.thread.tooltip")
+    ).apply {
+      actionListener = ActionListener {
+        startThreadVm.startWritingFirstMessage()
+      }
+    }
+    startThreadVm.canStartThread.forEach(lifetime) {
+      button.isVisible = it
+    }
+    return button
   }
 }

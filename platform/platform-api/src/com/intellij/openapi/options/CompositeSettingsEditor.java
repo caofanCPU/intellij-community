@@ -3,6 +3,7 @@ package com.intellij.openapi.options;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Factory;
 import com.intellij.util.Alarm;
@@ -18,14 +19,14 @@ import java.util.Set;
 public abstract class CompositeSettingsEditor<Settings> extends SettingsEditor<Settings> {
   public static final Logger LOG = Logger.getInstance(CompositeSettingsEditor.class);
 
-  private Collection<SettingsEditor<Settings>> myEditors = Collections.emptyList();
+  protected Collection<SettingsEditor<Settings>> myEditors = Collections.emptyList();
   private SettingsEditorListener<Settings> myChildSettingsListener;
   private SynchronizationController mySyncController;
   private boolean myIsDisposed;
 
   public CompositeSettingsEditor() {}
 
-  public CompositeSettingsEditor(@Nullable Factory<Settings> factory) {
+  public CompositeSettingsEditor(@Nullable Factory<? extends Settings> factory) {
     super(factory);
 
     if (factory != null) {
@@ -33,6 +34,7 @@ public abstract class CompositeSettingsEditor<Settings> extends SettingsEditor<S
     }
   }
 
+  @NotNull
   public abstract CompositeSettingsBuilder<Settings> getBuilder();
 
   @Override
@@ -53,7 +55,7 @@ public abstract class CompositeSettingsEditor<Settings> extends SettingsEditor<S
       try {
         myEditor.applyTo(settings);
       }
-      catch (ConfigurationException e) {
+      catch (ConfigurationException | ProcessCanceledException e) {
         throw e;
       }
       catch (Exception e) {
@@ -71,7 +73,7 @@ public abstract class CompositeSettingsEditor<Settings> extends SettingsEditor<S
 
   @Override
   public void installWatcher(JComponent c) {
-    myChildSettingsListener = new SettingsEditorListener<Settings>() {
+    myChildSettingsListener = new SettingsEditorListener<>() {
       @Override
       public void stateChanged(@NotNull SettingsEditor<Settings> editor) {
         fireEditorStateChanged();

@@ -6,6 +6,8 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ui.laf.darcula.DarculaUIUtil.BW
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.event.DocumentEvent
+import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -46,8 +48,6 @@ import net.miginfocom.swing.MigLayout
 import java.awt.Container
 import java.awt.Insets
 import java.awt.event.*
-import java.awt.event.KeyEvent
-import java.util.*
 import java.util.Collections.synchronizedMap
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -106,7 +106,7 @@ internal class GitRebaseDialog(private val project: Project,
     updateUi()
     init()
 
-    startTrackingValidation()
+    updateOkActionEnabled()
   }
 
   override fun createCenterPanel() = panel
@@ -173,17 +173,12 @@ internal class GitRebaseDialog(private val project: Project,
     rebaseSettings.options.forEach { option -> selectedOptions += option }
     val newBase = rebaseSettings.newBase
     if (!newBase.isNullOrEmpty() && isValidRevision(newBase)) {
-      findRef(newBase)?.let { ref ->
-        upstreamField.item = PresentableRef(ref)
-      }
+      upstreamField.item = newBase
     }
   }
 
-  private fun findRef(refName: String): GitReference? {
-    val predicate: (GitReference) -> Boolean = { ref -> ref.name == refName || ref.fullName == refName }
-    return localBranches.find(predicate)
-           ?: remoteBranches.find(predicate)
-           ?: getTags().find(predicate)
+  private fun updateOkActionEnabled() {
+    isOKActionEnabled = listOf(::validateUpstream, ::validateOnto).mapNotNull { it() }.isEmpty()
   }
 
   private fun getTags() = tags[getSelectedRepo().root] ?: emptyList()
@@ -314,13 +309,13 @@ internal class GitRebaseDialog(private val project: Project,
     val upstream = upstreamField.item
     val onto = ontoField.item
 
-    val existingRefs = upstreamField.model.castSafelyTo<MutableCollectionComboBoxModel<PresentableRef>>()?.items?.toSet() ?: emptySet()
-    val newRefs = refs.map { PresentableRef(it) }.toSet()
+    val existingRefs = upstreamField.model.castSafelyTo<MutableCollectionComboBoxModel<String>>()?.items?.toSet() ?: emptySet()
+    val newRefs = refs.map { it.name }.toSet()
 
     val result = (if (replace) newRefs else existingRefs + newRefs).toList()
 
-    upstreamField.model.castSafelyTo<MutableCollectionComboBoxModel<PresentableRef>>()?.update(result)
-    ontoField.model.castSafelyTo<MutableCollectionComboBoxModel<PresentableRef>>()?.update(result)
+    upstreamField.model.castSafelyTo<MutableCollectionComboBoxModel<String>>()?.update(result)
+    ontoField.model.castSafelyTo<MutableCollectionComboBoxModel<String>>()?.update(result)
 
     upstreamField.item = upstream
     ontoField.item = onto
@@ -426,21 +421,31 @@ internal class GitRebaseDialog(private val project: Project,
       .showUnderneathOf(rootPane)
   }
 
-  private fun createOntoField() = ComboBoxWithAutoCompletion<PresentableRef>(MutableCollectionComboBoxModel(), project).apply {
-    prototypeDisplayValue = PresentableRef(GitLocalBranch(GIT_REF_PROTOTYPE_VALUE))
+  private fun createOntoField() = ComboBoxWithAutoCompletion<String>(MutableCollectionComboBoxModel(), project).apply {
+    prototypeDisplayValue = GIT_REF_PROTOTYPE_VALUE
     isVisible = false
     setMinimumAndPreferredWidth(JBUI.scale(if (showRootField()) 220 else 310))
     setPlaceholder(GitBundle.message("rebase.dialog.new.base"))
     @Suppress("UsePropertyAccessSyntax")
     setUI(FlatComboBoxUI(outerInsets = Insets(BW.get(), 0, BW.get(), 0)))
+    addDocumentListener(object : DocumentListener {
+      override fun documentChanged(event: DocumentEvent) {
+        updateOkActionEnabled()
+      }
+    })
   }
 
-  private fun createUpstreamField() = ComboBoxWithAutoCompletion<PresentableRef>(MutableCollectionComboBoxModel(), project).apply {
-    prototypeDisplayValue = PresentableRef(GitLocalBranch(GIT_REF_PROTOTYPE_VALUE))
+  private fun createUpstreamField() = ComboBoxWithAutoCompletion<String>(MutableCollectionComboBoxModel(), project).apply {
+    prototypeDisplayValue = GIT_REF_PROTOTYPE_VALUE
     setMinimumAndPreferredWidth(JBUI.scale(185))
     setPlaceholder(GitBundle.message("rebase.dialog.target"))
     @Suppress("UsePropertyAccessSyntax")
     setUI(FlatComboBoxUI(outerInsets = Insets(BW.get(), 0, BW.get(), 0)))
+    addDocumentListener(object : DocumentListener {
+      override fun documentChanged(event: DocumentEvent) {
+        updateOkActionEnabled()
+      }
+    })
   }
 
   private fun createRepoField() = createRepositoryField(repositories, defaultRoot).apply {
@@ -516,16 +521,12 @@ internal class GitRebaseDialog(private val project: Project,
   }
 
   private fun moveNewBaseValue() {
-    val gitRefMapper = { source: ComboBoxWithAutoCompletion<PresentableRef> ->
-      source.getText()?.let { findRef(it) }?.let { PresentableRef(it) } ?: source.item
-    }
-
     if (GitRebaseOption.ONTO in selectedOptions) {
-      ontoField.item = gitRefMapper(upstreamField)
+      ontoField.item = upstreamField.getText()
       upstreamField.item = null
     }
     else {
-      upstreamField.item = gitRefMapper(ontoField)
+      upstreamField.item = ontoField.getText()
       ontoField.item = null
     }
   }
@@ -642,7 +643,7 @@ internal class GitRebaseDialog(private val project: Project,
 
   private fun isAlreadyAdded(component: JComponent, container: Container) = component.parent == container
 
-  internal inner class RevValidator(private val field: ComboBoxWithAutoCompletion<PresentableRef>) {
+  internal inner class RevValidator(private val field: ComboBoxWithAutoCompletion<String>) {
 
     private var lastValidatedRevision = ""
     private var lastValid = true
@@ -667,10 +668,6 @@ internal class GitRebaseDialog(private val project: Project,
       null
     else
       ValidationInfo(GitBundle.message("rebase.dialog.error.branch.or.tag.not.exist"), field)
-  }
-
-  data class PresentableRef(private val ref: GitReference) {
-    override fun toString() = ref.name
   }
 
   companion object {

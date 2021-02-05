@@ -140,13 +140,16 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testPatternVariableNotUsedAfterwards() {
     doTest("temp", true, false, false, "boolean");
   }
-  public void testPatternVariableDeclarationJava14Preview() {
+  public void testPatternVariableDeclarationJava15Preview() {
     doTestWithVarType(new MockIntroduceVariableHandler("temp", true, false, false, JAVA_LANG_STRING));
   }
-  public void testPatternVariableDeclarationUsedInLocalJava14Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
-  public void testPatternVariableDeclarationAfterIfJava14Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
-  public void testNonPatternVariableDeclarationTwoBlocksJava14Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
-  public void testNonPatternDeclarationJava14Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
+  public void testPatternVariableDeclarationUpcastJava16() {
+    doTestWithVarType(new MockIntroduceVariableHandler("temp", true, false, false, JAVA_LANG_STRING));
+  }
+  public void testPatternVariableDeclarationUsedInLocalJava15Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
+  public void testPatternVariableDeclarationAfterIfJava15Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
+  public void testNonPatternVariableDeclarationTwoBlocksJava15Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
+  public void testNonPatternDeclarationJava15Preview() { doTest("temp", true, false, false, JAVA_LANG_STRING);}
 
   public void testTernaryBothBranches() { doTest("temp", true, false, false, "int"); }
   public void testIfConditionAndChain() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
@@ -163,6 +166,10 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
 
   public void testVarTypeExtractedJava10() {
     doTestWithVarType(new MockIntroduceVariableHandler("temp", true, false, false, "java.util.ArrayList<java.lang.String>"));
+  }
+  
+  public void testVarTypeArrayExtractedJava10() {
+    doTestWithVarType(new MockIntroduceVariableHandler("temp", true, false, false, "int[]"));
   }
 
   public void testTypeContainingVarJava11() {
@@ -347,6 +354,7 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testCapturedWildcardUpperBoundSuggestedAsType() { doTest("m", false, false, false, "I"); }
   public void testArrayOfCapturedWildcardUpperBoundSuggestedAsType() { doTest("m", false, false, false, "I[]"); }
   public void testFieldFromLambda() { doTest("foo", false, false, true, "int"); }
+  public void testNestedAndOrParentheses() { doTest("foo", false, false, false, "boolean"); }
 
   public void testReturnNonExportedArray() {
     doTest(new MockIntroduceVariableHandler("i", false, false, false, "java.io.File[]") {
@@ -387,6 +395,17 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
 
   public void testNullabilityAnnotationNoConflict() {
     doTest("x", true, false, false, "java.lang.@org.eclipse.jdt.annotation.NonNull String"); 
+  }
+
+  public void testAllButWriteNoRead() {
+    try {
+      doTest("x", true, false, false, "int");
+    }
+    catch (Exception e) {
+      assertEquals("Error message:No matching occurrences", e.getMessage());
+      return;
+    }
+    fail("Should not be able to perform refactoring");
   }
 
   private void doTestWithVarType(IntroduceVariableBase testMe) {

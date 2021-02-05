@@ -8,13 +8,11 @@ import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.NullableLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.xmlb.annotations.Tag;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -26,6 +24,8 @@ import static com.intellij.execution.wsl.WSLUtil.LOG;
  */
 @Tag("descriptor")
 final class WslDistributionDescriptor {
+  private static final int PROBE_TIMEOUT = SystemProperties.getIntProperty("ide.wsl.probe.timeout", 60_000);
+
   @Tag("id")
   private @NlsSafe String myId;
   @Tag("microsoft-id")
@@ -44,8 +44,8 @@ final class WslDistributionDescriptor {
   /**
    * Necessary for serializer
    */
-  WslDistributionDescriptor() {
-  }
+  @SuppressWarnings("unused")
+  WslDistributionDescriptor() { }
 
   WslDistributionDescriptor(@NotNull String msId) {
     this(msId, msId, null, msId);
@@ -103,14 +103,11 @@ final class WslDistributionDescriptor {
 
   @Override
   public String toString() {
-    return "WslDistributionDescriptor{" +
-           "id='" + myId + '\'' +
-           ", msId='" + myMsId + '\'' +
-           '}';
+    return "WslDistributionDescriptor{id='" + myId + "', msId='" + myMsId + "'}";
   }
 
   /**
-   * @return the mount point for current distribution. Default value of {@code /mnt/} may be overriden with {@code /etc/wsl.conf}
+   * @return the mount point for current distribution. Default value of {@code /mnt/} may be overridden with {@code /etc/wsl.conf}
    * @apiNote caches value per IDE run. Meaning - reconfiguring of this option in WSL requires IDE restart.
    */
   final @NotNull @NlsSafe String getMntRoot() {
@@ -133,7 +130,7 @@ final class WslDistributionDescriptor {
     }
 
     WSLCommandLineOptions options = new WSLCommandLineOptions().setLaunchWithWslExe(true).setExecuteCommandInShell(false);
-    String wslCurrentDirectory = readWslOutputLine(options, Collections.singletonList("pwd"));
+    String wslCurrentDirectory = readWslOutputLine(options, List.of("pwd"));
     if (wslCurrentDirectory == null) return WSLDistribution.DEFAULT_WSL_MNT_ROOT;
 
     String currentPathSuffix = WSLDistribution.convertWindowsPath(windowsCurrentDirectory);
@@ -146,8 +143,7 @@ final class WslDistributionDescriptor {
     return WSLDistribution.DEFAULT_WSL_MNT_ROOT;
   }
 
-  @Nullable
-  private String readWslOutputLine(WSLCommandLineOptions options, List<@NonNls String> command) {
+  private @Nullable String readWslOutputLine(WSLCommandLineOptions options, List<String> command) {
     List<String> pwdOutputLines = readWSLOutput(options, command);
     if (pwdOutputLines == null) return null;
     if (pwdOutputLines.size() != 1) {
@@ -160,40 +156,37 @@ final class WslDistributionDescriptor {
     return pwdOutputLines.get(0).trim();
   }
 
-  @Nullable
-  private List<String> readWSLOutput(WSLCommandLineOptions options, List<@NonNls String> command) {
-    WSLDistribution distribution = WSLUtil.getDistributionById(getId());
-    if (distribution == null) {
-      return null;
-    }
-    ProcessOutput pwdOutput;
+  private @Nullable List<String> readWSLOutput(WSLCommandLineOptions options, List<String> command) {
+    WSLDistribution distribution = WslDistributionManager.getInstance().getOrCreateDistributionByMsId(getId());
+
+    ProcessOutput output;
     try {
-      pwdOutput = distribution.executeOnWsl(command, options, -1, null);
+      output = distribution.executeOnWsl(command, options, PROBE_TIMEOUT, null);
     }
     catch (ExecutionException e) {
-      LOG.warn("Error reading pwd output for " + getId(), e);
+      LOG.warn("Start failed on " + getId(), e);
       return null;
     }
 
-    if (pwdOutput.getExitCode() != 0) {
-      LOG.info("Non-zero exit code while fetching pwd: " +
-               "[id=" + getId() + "; " +
-               "[exitCode=" + pwdOutput.getExitCode() + "; " +
-               "[stderr=" + pwdOutput.getStderr() + "; " +
-               "[stdout=" + pwdOutput.getStdout() + "]");
+    if (output.getExitCode() != 0) {
+      LOG.info("Execution failed on " + getId() +
+               " [exitCode=" + output.getExitCode() +
+               "; stderr=" + output.getStderr() +
+               "; stdout=" + output.getStdout() + "]");
       return null;
     }
 
-    return pwdOutput.getStdoutLines();
+    return output.getStdoutLines();
   }
 
-  @NonNls @Nullable
-  private String computeUserHome() {
+  private @Nullable String computeUserHome() {
     return getEnvironmentVariable("HOME");
   }
 
-  @NonNls @Nullable
-  String getEnvironmentVariable(String name) {
-    return readWslOutputLine(new WSLCommandLineOptions(), Arrays.asList("printenv", name));
+  @Nullable String getEnvironmentVariable(String name) {
+    return readWslOutputLine(new WSLCommandLineOptions()
+                               .setExecuteCommandInInteractiveShell(true)
+                               .setExecuteCommandInLoginShell(true),
+                             List.of("printenv", name));
   }
 }

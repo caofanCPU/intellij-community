@@ -1,105 +1,83 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.plugins
 
-import com.intellij.openapi.application.ApplicationManager.getApplication
 import com.intellij.openapi.components.BaseState
-import com.intellij.openapi.extensions.ExtensionNotApplicableException
 import com.intellij.openapi.extensions.PluginId
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.startup.StartupActivity
 import com.intellij.util.xmlb.annotations.XCollection
 import org.jetbrains.annotations.ApiStatus
 
 @ApiStatus.Internal
-class ProjectPluginTracker(
-  internal val project: Project,
-  private val state: ProjectPluginTrackerState,
-) {
+interface ProjectPluginTracker {
 
-  companion object {
+  val projectName: String
 
-    class ProjectPluginTrackerState : BaseState() {
+  val enabledPluginsIds: Set<PluginId>
 
-      @get:XCollection
-      internal var enabledPlugins by stringSet()
+  fun isEnabled(pluginId: PluginId): Boolean
 
-      @get:XCollection
-      internal var disabledPlugins by stringSet()
+  val disabledPluginsIds: Set<PluginId>
 
-      internal fun register(id: PluginId, enable: Boolean) {
-        val idString = id.idString
-        val setToRemoveFrom = if (enable) disabledPlugins else enabledPlugins
-        if (!setToRemoveFrom.remove(idString)) {
-          val setToAddTo = if (enable) enabledPlugins else disabledPlugins
-          setToAddTo.add(idString)
-        }
-      }
+  fun isDisabled(pluginId: PluginId): Boolean
+}
 
-      internal fun unregister(id: PluginId) {
-        val idString = id.idString
-        if (!enabledPlugins.remove(idString)) {
-          disabledPlugins.remove(idString)
-        }
-      }
-    }
+@ApiStatus.Internal
+class ProjectPluginTrackerImpl(override val projectName: String) : BaseState(),
+                                                                   ProjectPluginTracker {
 
-    internal class EnableDisablePluginsActivity : StartupActivity.RequiredForSmartMode {
+  @get:XCollection
+  var enabledPlugins by stringSet()
 
-      init {
-        if (getApplication().isUnitTestMode) {
-          throw ExtensionNotApplicableException.INSTANCE
-        }
-      }
+  override val enabledPluginsIds: Set<PluginId> get() = enabledPlugins.toPluginIds()
 
-      override fun runActivity(project: Project) {
-        val manager = ProjectPluginTrackerManager.getInstance()
-        val tracker = manager.createPluginTracker(project)
-        val trackers = manager.openProjectsPluginTrackers(project)
+  override fun isEnabled(pluginId: PluginId) = enabledPlugins.contains(pluginId.idString)
 
-        ProjectPluginTrackerManager.loadPlugins(
-          tracker.enabledPluginIds(trackers)
-        )
+  @get:XCollection
+  var disabledPlugins by stringSet()
 
-        manager.unloadPlugins(
-          tracker.disabledPluginIds,
-          project,
-        )
-      }
-    }
-  }
+  override val disabledPluginsIds: Set<PluginId> get() = disabledPlugins.toPluginIds()
 
-  private val enabledPluginIds get() = state.enabledPlugins.findPluginId()
+  override fun isDisabled(pluginId: PluginId) = disabledPlugins.contains(pluginId.idString)
 
-  private val disabledPluginIds get() = state.disabledPlugins.findPluginId()
-
-  fun startTrackingPerProject(
+  fun startTracking(
     pluginIds: Iterable<PluginId>,
     enable: Boolean,
-  ) {
-    pluginIds.forEach { state.register(it, enable) }
-  }
+  ): Boolean {
+    val (setToRemoveFrom, setToAddTo) = if (enable)
+      Pair(disabledPlugins, enabledPlugins)
+    else
+      Pair(enabledPlugins, disabledPlugins)
 
-  fun stopTrackingPerProject(pluginIds: Iterable<PluginId>) {
-    pluginIds.forEach(state::unregister)
-  }
+    var updated = false
 
-  fun isEnabled(pluginId: PluginId) = state.enabledPlugins.contains(pluginId.idString)
-
-  fun isDisabled(pluginId: PluginId) = state.disabledPlugins.contains(pluginId.idString)
-
-  internal fun enabledPluginIds(trackers: List<ProjectPluginTracker>): Collection<PluginId> {
-    return trackers
-      .flatMap { it.disabledPluginIds() }
-      .union(enabledPluginIds)
-  }
-
-  internal fun disabledPluginIds(trackers: List<ProjectPluginTracker> = listOf()): Collection<PluginId> {
-    return disabledPluginIds
-      .filterNot { pluginId ->
-        DisabledPluginsState.isDisabled(pluginId) ||
-        trackers.isNotEmpty() && trackers.all { it.isDisabled(pluginId) }
+    pluginIds
+      .map { it.idString }
+      .forEach {
+        setToRemoveFrom.remove(it)
+        setToAddTo.add(it)
+        updated = true
       }
+
+    if (updated) incrementModificationCount()
+    return updated
   }
 
-  private fun Set<String>.findPluginId() = mapNotNull { PluginId.findId(it) }
+  fun stopTracking(pluginIds: Iterable<PluginId>): Boolean {
+    var updated = false
+
+    pluginIds
+      .map { it.idString }
+      .filterNot {
+        val removed = enabledPlugins.remove(it)
+        updated = removed || updated
+        removed
+      }.forEach {
+        disabledPlugins.remove(it)
+        updated = true
+      }
+
+    if (updated) incrementModificationCount()
+    return updated
+  }
+
+  private fun Set<String>.toPluginIds() = mapNotNullTo(HashSet()) { PluginId.findId(it) }
 }

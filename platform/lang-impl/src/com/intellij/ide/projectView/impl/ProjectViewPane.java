@@ -15,7 +15,6 @@ import com.intellij.ide.scratch.ScratchUtil;
 import com.intellij.ide.util.treeView.AbstractTreeBuilder;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
 import com.intellij.ide.util.treeView.AbstractTreeUpdater;
-import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
@@ -29,6 +28,7 @@ import com.intellij.util.PlatformUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
@@ -86,10 +86,6 @@ public class ProjectViewPane extends AbstractProjectViewPSIPane {
   @Override
   protected ProjectViewTree createTree(@NotNull DefaultTreeModel treeModel) {
     return new ProjectViewTree(treeModel) {
-      {
-        putClientProperty(FileEditorManagerImpl.OPEN_IN_PREVIEW_TAB, true);
-      }
-
       @Override
       public String toString() {
         return getTitle() + " " + super.toString();
@@ -101,6 +97,15 @@ public class ProjectViewPane extends AbstractProjectViewPSIPane {
           font = font.deriveFont(font.getSize() + 1.0f);
         }
         super.setFont(font);
+      }
+
+      @Override
+      public AccessibleContext getAccessibleContext() {
+        if (accessibleContext == null) {
+          accessibleContext = super.getAccessibleContext();
+          accessibleContext.setAccessibleName(IdeBundle.message("project.structure.tree.accessible.name"));
+        }
+        return accessibleContext;
       }
     };
   }

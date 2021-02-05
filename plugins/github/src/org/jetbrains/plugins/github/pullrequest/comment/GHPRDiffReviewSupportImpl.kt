@@ -11,7 +11,6 @@ import com.intellij.openapi.diff.impl.patch.PatchReader
 import org.jetbrains.plugins.github.api.data.GHUser
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestPendingReview
 import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequestReviewThread
-import org.jetbrains.plugins.github.pullrequest.avatars.CachingGithubAvatarIconsProvider
 import org.jetbrains.plugins.github.pullrequest.comment.ui.GHPRDiffEditorReviewComponentsFactoryImpl
 import org.jetbrains.plugins.github.pullrequest.comment.ui.GHPRReviewProcessModelImpl
 import org.jetbrains.plugins.github.pullrequest.comment.viewer.GHPRSimpleOnesideDiffViewerReviewThreadsHandler
@@ -24,6 +23,7 @@ import org.jetbrains.plugins.github.pullrequest.ui.GHLoadingModel
 import org.jetbrains.plugins.github.pullrequest.ui.GHSimpleLoadingModel
 import org.jetbrains.plugins.github.pullrequest.ui.SimpleEventListener
 import org.jetbrains.plugins.github.pullrequest.ui.changes.GHPRCreateDiffCommentParametersHelper
+import org.jetbrains.plugins.github.ui.avatars.GHAvatarIconsProvider
 import org.jetbrains.plugins.github.ui.util.SingleValueModel
 import org.jetbrains.plugins.github.util.GHPatchHunkUtil
 import java.util.function.Function
@@ -31,7 +31,7 @@ import kotlin.properties.Delegates.observable
 
 class GHPRDiffReviewSupportImpl(private val reviewDataProvider: GHPRReviewDataProvider,
                                 private val diffData: GHPRChangeDiffData,
-                                private val avatarIconsProviderFactory: CachingGithubAvatarIconsProvider.Factory,
+                                private val avatarIconsProvider: GHAvatarIconsProvider,
                                 private val currentUser: GHUser)
   : GHPRDiffReviewSupport {
 
@@ -73,15 +73,18 @@ class GHPRDiffReviewSupportImpl(private val reviewDataProvider: GHPRReviewDataPr
     val createCommentParametersHelper = GHPRCreateDiffCommentParametersHelper(diffData.commitSha, diffData.filePath, diffData.linesMapper)
     val componentsFactory = GHPRDiffEditorReviewComponentsFactoryImpl(reviewDataProvider,
                                                                       createCommentParametersHelper,
-                                                                      avatarIconsProviderFactory, currentUser)
+                                                                      avatarIconsProvider, currentUser)
     val cumulative = diffData is GHPRChangeDiffData.Cumulative
     when (viewer) {
       is SimpleOnesideDiffViewer ->
-        GHPRSimpleOnesideDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory, cumulative)
+        GHPRSimpleOnesideDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory,
+                                                        cumulative)
       is UnifiedDiffViewer ->
-        GHPRUnifiedDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory, cumulative)
+        GHPRUnifiedDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory,
+                                                  cumulative)
       is TwosideTextDiffViewer ->
-        GHPRTwosideDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory, cumulative)
+        GHPRTwosideDiffViewerReviewThreadsHandler(reviewProcessModel, diffRangesModel, reviewThreadsModel, viewer, componentsFactory,
+                                                  cumulative)
       else -> return
     }
   }

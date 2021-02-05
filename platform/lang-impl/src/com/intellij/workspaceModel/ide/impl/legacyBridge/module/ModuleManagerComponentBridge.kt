@@ -34,6 +34,7 @@ import com.intellij.util.io.systemIndependentPath
 import com.intellij.workspaceModel.ide.*
 import com.intellij.workspaceModel.ide.impl.executeOrQueueOnDispatchThread
 import com.intellij.workspaceModel.ide.impl.legacyBridge.facet.FacetEntityChangeListener
+import com.intellij.workspaceModel.ide.impl.legacyBridge.watcher.VirtualFileUrlWatcher
 import com.intellij.workspaceModel.ide.impl.legacyBridge.library.LibraryBridgeImpl
 import com.intellij.workspaceModel.ide.impl.legacyBridge.library.ProjectLibraryTableBridgeImpl
 import com.intellij.workspaceModel.ide.impl.legacyBridge.library.ProjectLibraryTableBridgeImpl.Companion.libraryMap
@@ -125,7 +126,10 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
             }
           }
 
-          rootsChangeListener.beforeChanged(event)
+          if (!VirtualFileUrlWatcher.getInstance(project).isInsideFilePointersUpdate) {
+            //the old implementation doesn't fire rootsChanged event when roots are moved or renamed, let's keep this behavior for now
+            rootsChangeListener.beforeChanged(event)
+          }
         }
 
         override fun changed(event: VersionedStorageChange) {
@@ -175,7 +179,11 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
             }
           }
 
-          rootsChangeListener.changed(event)
+          // Roots changed should be sent after syncing with legacy bridge
+          if (!VirtualFileUrlWatcher.getInstance(project).isInsideFilePointersUpdate) {
+            //the old implementation doesn't fire rootsChanged event when roots are moved or renamed, let's keep this behavior for now
+            rootsChangeListener.changed(event)
+          }
         }
       })
     }
@@ -203,7 +211,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
     when (change) {
       is EntityChange.Removed -> {
         // It's possible case then idToModule doesn't contain element e.g if unloaded module was removed
-        val module = event.storageBefore.moduleMap.getDataByEntity(change.entity)
+        val module = event.storageBefore.findModuleByEntity(change.entity)
         if (module != null) {
           fireEventAndDisposeModule(module)
         }
@@ -211,7 +219,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
       }
 
       is EntityChange.Added -> {
-        val alreadyCreatedModule = event.storageAfter.moduleMap.getDataByEntity(change.entity)
+        val alreadyCreatedModule = event.storageAfter.findModuleByEntity(change.entity)
         val module = if (alreadyCreatedModule != null) {
           unloadedModulesSet.remove(change.entity.name)
           unloadedModules.remove(change.entity.name)
@@ -243,7 +251,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
         if (oldId != newId) {
           unloadedModulesSet.remove(change.newEntity.name)
           unloadedModules.remove(change.newEntity.name)
-          val module = event.storageBefore.moduleMap.getDataByEntity(change.oldEntity)
+          val module = event.storageBefore.findModuleByEntity(change.oldEntity)
           if (module != null) {
             module.rename(newId.name, true)
             oldModuleNames[module] = oldId.name
@@ -281,7 +289,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
 
           val library = event.storageAfter.libraryMap.getDataByEntity(change.entity)
           if (library == null && WorkspaceModelTopics.getInstance(project).modulesAreLoaded) {
-            val module = entityStore.current.moduleMap.getDataByEntity(moduleEntity)
+            val module = entityStore.current.findModuleByEntity(moduleEntity)
                          ?: error("Could not find module bridge for module entity $moduleEntity")
             val moduleRootComponent = ModuleRootComponentBridge.getInstance(module)
             moduleRootComponent.moduleLibraryTable.addLibrary(change.entity, null)
@@ -296,7 +304,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
   }
 
   private fun addModule(moduleEntity: ModuleEntity): ModuleBridge {
-    val module = createModuleInstance(moduleEntity, entityStore, diff = null, isNew = false)
+    val module = createModuleInstance(moduleEntity, entityStore, diff = null, isNew = true)
     WorkspaceModel.getInstance(project).updateProjectModelSilent {
       it.mutableModuleMap.addMapping(moduleEntity, module)
     }
@@ -456,7 +464,7 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
 
   override fun findModuleByName(name: String): Module? {
     val entity = entityStore.current.resolve(ModuleId(name)) ?: return null
-    return entityStore.current.moduleMap.getDataByEntity(entity)
+    return entityStore.current.findModuleByEntity(entity)
   }
 
   override fun disposeModule(module: Module) = ApplicationManager.getApplication().runWriteAction {
@@ -598,16 +606,19 @@ class ModuleManagerComponentBridge(private val project: Project) : ModuleManager
     internal fun hasModuleGroups(entityStorage: VersionedEntityStorage) =
       entityStorage.current.entities(ModuleGroupPathEntity::class.java).firstOrNull() != null
 
-    private const val INDEX_ID = "moduleBridge"
+    private const val MODULE_BRIDGE_MAPPING_ID = "intellij.modules.bridge"
 
     internal val WorkspaceEntityStorage.moduleMap: ExternalEntityMapping<ModuleBridge>
-      get() = getExternalMapping(INDEX_ID)
+      get() = getExternalMapping(MODULE_BRIDGE_MAPPING_ID)
     internal val WorkspaceEntityStorageDiffBuilder.mutableModuleMap: MutableExternalEntityMapping<ModuleBridge>
-      get() = getMutableExternalMapping(INDEX_ID)
+      get() = getMutableExternalMapping(MODULE_BRIDGE_MAPPING_ID)
 
     @JvmStatic
     fun WorkspaceEntityStorage.findModuleEntity(module: ModuleBridge) =
       moduleMap.getEntities(module).firstOrNull() as ModuleEntity?
+
+    @JvmStatic
+    fun WorkspaceEntityStorage.findModuleByEntity(entity: ModuleEntity): ModuleBridge? = moduleMap.getDataByEntity(entity)
 
     private val dependencyGraphWithTestsValue = CachedValue { storage ->
       buildModuleGraph(storage, true)

@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.codeInsight.lookup.impl;
 
@@ -26,10 +26,7 @@ import com.intellij.ui.components.JBList;
 import com.intellij.ui.icons.RowIcon;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
-import com.intellij.util.Alarm;
-import com.intellij.util.IconUtil;
-import com.intellij.util.ObjectUtils;
-import com.intellij.util.SingleAlarm;
+import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.FList;
 import com.intellij.util.ui.EmptyIcon;
@@ -69,7 +66,7 @@ public final class LookupCellRenderer implements ListCellRenderer<LookupElement>
   private static final Key<Font> CUSTOM_TYPE_FONT = Key.create("CustomLookupElementTypeFont");
 
   static final Color BACKGROUND_COLOR = new JBColor(() -> Objects.requireNonNull(EditorColorsUtil.getGlobalOrDefaultColor(COLOR_KEY)));
-  private static final Color MATCHED_FOREGROUND_COLOR = JBColor.namedColor("CompletionPopup.matchForeground", JBUI.CurrentTheme.Link.linkColor());
+  private static final Color MATCHED_FOREGROUND_COLOR = JBColor.namedColor("CompletionPopup.matchForeground", JBUI.CurrentTheme.Link.Foreground.ENABLED);
   private static final Color SELECTED_BACKGROUND_COLOR = JBColor.namedColor("CompletionPopup.selectionBackground", new JBColor(0xc5dffc, 0x113a5c));
   public static final Color SELECTED_NON_FOCUSED_BACKGROUND_COLOR = JBColor.namedColor("CompletionPopup.selectionInactiveBackground", new JBColor(0xE0E0E0, 0x515457));
   private static final Color NON_FOCUSED_MASK_COLOR = JBColor.namedColor("CompletionPopup.nonFocusedMask", Gray._0.withAlpha(0));
@@ -521,7 +518,7 @@ public final class LookupCellRenderer implements ListCellRenderer<LookupElement>
       if (myShrinkLookup || maxWidth > myLookupTextWidth) {
         myLookupTextWidth = maxWidth;
         myLookup.requestResize();
-        myLookup.refreshUi(false, false);
+        SlowOperations.allowSlowOperations(() -> myLookup.refreshUi(false, false));
       }
     }
   }

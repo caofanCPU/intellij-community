@@ -109,7 +109,7 @@ public class TypeMayBeWeakenedInspection extends AbstractBaseJavaLocalInspection
       Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
       if (editor == null) return;
       String hint = InspectionGadgetsBundle.message("inspection.type.may.be.weakened.add.stop.class.selection.popup");
-      ListPopup popup = JBPopupFactory.getInstance().createListPopup(new BaseListPopupStep<String>(hint, myCandidates) {
+      ListPopup popup = JBPopupFactory.getInstance().createListPopup(new BaseListPopupStep<>(hint, myCandidates) {
         @Override
         public PopupStep onChosen(String selectedValue, boolean finalChoice) {
           CommandProcessor.getInstance().executeCommand(project, () -> addClass(selectedValue, descriptor.getPsiElement()),
@@ -367,16 +367,17 @@ public class TypeMayBeWeakenedInspection extends AbstractBaseJavaLocalInspection
       super.visitVariable(variable);
       if (variable instanceof PsiParameter) {
         final PsiParameter parameter = (PsiParameter)variable;
+        if (parameter instanceof PsiPatternVariable) return;
         final PsiElement declarationScope = parameter.getDeclarationScope();
         if (declarationScope instanceof PsiCatchSection) {
           // do not weaken catch block parameters
           return;
         }
-        else if (declarationScope instanceof PsiLambdaExpression && parameter.getTypeElement() == null) {
+        if (declarationScope instanceof PsiLambdaExpression && parameter.getTypeElement() == null) {
           //no need to check inferred lambda params
           return;
         }
-        else if (declarationScope instanceof PsiMethod) {
+        if (declarationScope instanceof PsiMethod) {
           final PsiMethod method = (PsiMethod)declarationScope;
           final PsiClass containingClass = method.getContainingClass();
           if (containingClass == null ||

@@ -4,6 +4,8 @@ package com.intellij.workspaceModel.ide.impl.jps.serialization
 import com.intellij.configurationStore.StoreReloadManager
 import com.intellij.configurationStore.isFireStorageFileChangedEvent
 import com.intellij.diagnostic.StartUpMeasurer
+import com.intellij.ide.highlighter.ModuleFileType
+import com.intellij.ide.highlighter.ProjectFileType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
@@ -18,6 +20,8 @@ import com.intellij.openapi.project.ExternalStorageConfigurationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.getExternalConfigurationDir
 import com.intellij.openapi.project.impl.ProjectLifecycleListener
+import com.intellij.openapi.util.io.FileUtilRt
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
@@ -28,6 +32,7 @@ import com.intellij.openapi.vfs.pointers.VirtualFilePointer
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerListener
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerManager
 import com.intellij.project.stateStore
+import com.intellij.util.PlatformUtils
 import com.intellij.workspaceModel.ide.*
 import com.intellij.workspaceModel.ide.impl.WorkspaceModelImpl
 import com.intellij.workspaceModel.ide.impl.WorkspaceModelInitialTestContent
@@ -35,7 +40,6 @@ import com.intellij.workspaceModel.ide.impl.recordModuleLoadingActivity
 import com.intellij.workspaceModel.storage.*
 import com.intellij.workspaceModel.storage.bridgeEntities.ModuleDependencyItem
 import com.intellij.workspaceModel.storage.bridgeEntities.ModuleId
-import com.intellij.workspaceModel.storage.url.VirtualFileUrl
 import com.intellij.workspaceModel.storage.url.VirtualFileUrlManager
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.jps.util.JpsPathUtil
@@ -57,10 +61,12 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
       ApplicationManager.getApplication().messageBus.connect(this).subscribe(ProjectLifecycleListener.TOPIC, object : ProjectLifecycleListener {
         override fun projectComponentsInitialized(project: Project) {
           LOG.debug { "Project component initialized" }
-          if (project === this@JpsProjectModelSynchronizer.project
-              && !(WorkspaceModel.getInstance(project) as WorkspaceModelImpl).loadedFromCache) {
+          val workspaceModelImpl = WorkspaceModel.getInstance(project) as WorkspaceModelImpl
+          if (blockCidrDelayedUpdate()) workspaceModelImpl.blockDelayedLoading()
+          if (project === this@JpsProjectModelSynchronizer.project && !workspaceModelImpl.loadedFromCache) {
             LOG.info("Workspace model loaded without cache. Loading real project state into workspace model. ${Thread.currentThread()}")
             loadRealProject(project)
+            project.messageBus.syncPublisher(JpsProjectLoadedListener.LOADED).loaded()
           }
         }
       })
@@ -103,7 +109,8 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
     ApplicationManager.getApplication().invokeAndWait(Runnable {
       runWriteAction {
         WorkspaceModel.getInstance(project).updateProjectModel { updater ->
-          updater.replaceBySource({ it in changedSources }, builder.toStorage())
+          updater.replaceBySource({ it in changedSources || (it is JpsImportedEntitySource && !it.storedExternally && it.internalFile in changedSources) },
+                                  builder.toStorage())
         }
         sourcesToSave.removeAll(changedSources)
       }
@@ -121,14 +128,52 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
   }
 
   private fun registerListener() {
+    fun isParentOfStorageFiles(dir: VirtualFile): Boolean {
+      if (dir.name == Project.DIRECTORY_STORE_FOLDER) return true
+      val grandParent = dir.parent
+      return grandParent != null && grandParent.name == Project.DIRECTORY_STORE_FOLDER
+    }
+
+    fun isStorageFile(file: VirtualFile): Boolean {
+      val fileName = file.name
+      if ((FileUtilRt.extensionEquals(fileName, ModuleFileType.DEFAULT_EXTENSION)
+           || FileUtilRt.extensionEquals(fileName, ProjectFileType.DEFAULT_EXTENSION)) && !file.isDirectory) return true
+      val parent = file.parent
+      return parent != null && isParentOfStorageFiles(parent)
+    }
+
     ApplicationManager.getApplication().messageBus.connect(this).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
       override fun after(events: List<VFileEvent>) {
         //todo support move/rename
         //todo optimize: filter events before creating lists
-        val toProcess = events.asSequence().filter { isFireStorageFileChangedEvent(it) }
-        val addedUrls = toProcess.filterIsInstance<VFileCreateEvent>().filterNot { it.isEmptyDirectory }.mapTo(ArrayList()) { JpsPathUtil.pathToUrl(it.path) }
-        val removedUrls = toProcess.filterIsInstance<VFileDeleteEvent>().mapTo(ArrayList()) { JpsPathUtil.pathToUrl(it.path) }
-        val changedUrls = toProcess.filterIsInstance<VFileContentChangeEvent>().mapTo(ArrayList()) { JpsPathUtil.pathToUrl(it.path) }
+        val addedUrls = ArrayList<String>()
+        val removedUrls = ArrayList<String>()
+        val changedUrls = ArrayList<String>()
+        //JPS model is loaded from *.iml files, files in .idea directory (modules.xml), files from directories in .idea (libraries) and *.ipr file
+        // so we can ignore all other events to speed up processing
+        for (event in events) {
+          if (isFireStorageFileChangedEvent(event)) {
+            when (event) {
+              is VFileCreateEvent -> {
+                val fileName = event.childName
+                if (FileUtilRt.extensionEquals(fileName, ModuleFileType.DEFAULT_EXTENSION) && !event.isDirectory
+                    || isParentOfStorageFiles(event.parent) && !event.isEmptyDirectory) {
+                  addedUrls.add(JpsPathUtil.pathToUrl(event.path))
+                }
+              }
+              is VFileDeleteEvent -> {
+                if (isStorageFile(event.file)) {
+                  removedUrls.add(JpsPathUtil.pathToUrl(event.path))
+                }
+              }
+              is VFileContentChangeEvent -> {
+                if (isStorageFile(event.file)) {
+                  changedUrls.add(JpsPathUtil.pathToUrl(event.path))
+                }
+              }
+            }
+          }
+        }
         if (addedUrls.isNotEmpty() || removedUrls.isNotEmpty() || changedUrls.isNotEmpty()) {
           val change = JpsConfigurationFilesChange(addedUrls, removedUrls, changedUrls)
           incomingChanges.add(change)
@@ -152,12 +197,6 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
         }
       }
     })
-    project.messageBus.connect().subscribe(VirtualFilePointerListener.TOPIC, object : VirtualFilePointerListener {
-      override fun beforeValidityChanged(pointers: Array<out VirtualFilePointer>) {
-        val virtualFileUrlIndex = WorkspaceModel.getInstance(project).entityStorage.current.getVirtualFileUrlIndex()
-        pointers.forEach { virtualFileUrlIndex.findEntitiesByUrl(it as VirtualFileUrl).forEach { sourcesToSave.add(it.first.entitySource) } }
-      }
-    })
   }
 
   fun loadRealProject(project: Project) {
@@ -168,13 +207,7 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
     }
     val activity = StartUpMeasurer.startActivity("(wm) Load initial project")
     var childActivity = activity.startChild("(wm) Prepare serializers")
-    fileContentReader = (project.stateStore as ProjectStoreWithJpsContentReader).createContentReader()
-    val externalStoragePath = project.getExternalConfigurationDir()
-    //TODO:: Get rid of dependency on ExternalStorageConfigurationManager in order to use in build process
-    val externalStorageConfigurationManager = ExternalStorageConfigurationManager.getInstance(project)
-    val serializers = JpsProjectEntitiesLoader.createProjectSerializers(configLocation, fileContentReader, externalStoragePath, false,
-                                                                        virtualFileManager, externalStorageConfigurationManager)
-    this.serializers.set(serializers)
+    val serializers = prepareSerializers()
     registerListener()
     val builder = WorkspaceEntityStorageBuilder.create()
 
@@ -225,6 +258,32 @@ class JpsProjectModelSynchronizer(private val project: Project) : Disposable {
       val modulesToLoad = HashSet(modulePathsToLoad)
       ModuleManagerEx.getInstanceEx(project).unloadNewlyAddedModulesIfPossible(modulesToLoad, unloaded)
     }
+  }
+
+  // FIXME: 21.01.2021 This is a fix for OC-21192
+  // We do disable delayed loading of JPS model if modules.xml file missing (what happens because of bug if you open a project in 2020.3)
+  fun blockCidrDelayedUpdate(): Boolean {
+    if (!PlatformUtils.isCidr()) return false
+
+    val currentSerializers = prepareSerializers() as JpsProjectSerializersImpl
+    if (currentSerializers.moduleSerializers.isNotEmpty()) return false
+    return currentSerializers.moduleListSerializersByUrl.keys.all { !JpsPathUtil.urlToFile(it).exists() }
+  }
+
+  private fun prepareSerializers(): JpsProjectSerializers {
+    val existingSerializers = this.serializers.get()
+    if (existingSerializers != null) return existingSerializers
+
+    val configLocation: JpsProjectConfigLocation = project.configLocation!!
+    fileContentReader = (project.stateStore as ProjectStoreWithJpsContentReader).createContentReader()
+    val externalStoragePath = project.getExternalConfigurationDir()
+    //TODO:: Get rid of dependency on ExternalStorageConfigurationManager in order to use in build process
+    val externalStorageConfigurationManager = ExternalStorageConfigurationManager.getInstance(project)
+    val serializers = JpsProjectEntitiesLoader.createProjectSerializers(configLocation, fileContentReader, externalStoragePath, false,
+                                                                        virtualFileManager, externalStorageConfigurationManager)
+
+    this.serializers.set(serializers)
+    return serializers
   }
 
   fun saveChangedProjectEntities(writer: JpsFileContentWriter) {

@@ -4,6 +4,7 @@ package com.intellij;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.DefaultBundleService;
 import com.intellij.util.containers.CollectionFactory;
+import com.intellij.util.lang.JavaVersion;
 import org.jetbrains.annotations.*;
 
 import java.lang.ref.Reference;
@@ -17,15 +18,8 @@ import java.util.function.Supplier;
 
 /**
  * Base class for particular scoped bundles (e.g. {@code 'vcs'} bundles, {@code 'aop'} bundles etc).
- * <p/>
- * Usage pattern:
- * <ol>
- *   <li>Create class that extends this class and provides path to the target bundle to the current class constructor;</li>
- *   <li>
- *     Optionally create static facade method at the subclass - create single shared instance and delegate
- *     to its {@link #getMessage(String, Object...)};
- *   </li>
- * </ol>
+ * <br/>
+ * <b>This class is not supposed to be extended directly. Extend your bundle from {@link com.intellij.DynamicBundle} or {@link org.jetbrains.jps.api.JpsDynamicBundle}</b>
  *
  * @author Denis Zhdanov
  */
@@ -35,6 +29,7 @@ public class AbstractBundle {
   private static final Map<ClassLoader, Map<String, ResourceBundle>> ourCache = CollectionFactory.createConcurrentWeakMap();
   private static final Map<ClassLoader, Map<String, ResourceBundle>> ourDefaultCache = CollectionFactory.createConcurrentWeakMap();
 
+  private Reference<ResourceBundle.Control> myControl;
   private Reference<ResourceBundle> myBundle;
   private Reference<ResourceBundle> myDefaultBundle;
   private final @NonNls String myPathToBundle;
@@ -147,7 +142,7 @@ public class AbstractBundle {
 
   private @NotNull ResourceBundle resolveResourceBundle(@NotNull String pathToBundle, @NotNull ClassLoader loader) {
     try {
-      ResourceBundle.Control control = ResourceBundle.Control.getControl(ResourceBundle.Control.FORMAT_PROPERTIES);
+      ResourceBundle.Control control = getResourceBundleControl();
       return findBundle(pathToBundle, loader, control);
     }
     catch (MissingResourceException e) {
@@ -155,6 +150,25 @@ public class AbstractBundle {
       ResourceBundle.clearCache(loader);
       return ResourceBundle.getBundle(pathToBundle, Locale.getDefault(), loader);
     }
+  }
+  //we need return UTF-8 control for java <= 1.8
+  //Before java9 ISO-8859-1 was used, in java 9 and above UTF-8
+  //see https://docs.oracle.com/javase/9/docs/api/java/util/PropertyResourceBundle.html and
+  //https://docs.oracle.com/javase/8/docs/api/java/util/PropertyResourceBundle.html
+  //for more details
+  @ReviseWhenPortedToJDK("9")
+  private ResourceBundle.Control getResourceBundleControl() {
+    ResourceBundle.Control control = com.intellij.reference.SoftReference.dereference(myControl);
+    if (control == null) {
+      if (JavaVersion.current().feature >= 9) {
+        control = ResourceBundle.Control.getControl(ResourceBundle.Control.FORMAT_PROPERTIES);
+      }
+      else {
+        control = Utf8ResourceControl.INSTANCE;
+      }
+      myControl = new com.intellij.reference.SoftReference<>(control);
+    }
+    return control;
   }
 
   protected ResourceBundle findBundle(@NotNull @NonNls String pathToBundle, @NotNull ClassLoader loader, @NotNull ResourceBundle.Control control) {

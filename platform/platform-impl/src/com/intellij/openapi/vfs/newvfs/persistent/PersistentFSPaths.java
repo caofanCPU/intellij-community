@@ -3,7 +3,6 @@ package com.intellij.openapi.vfs.newvfs.persistent;
 
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -31,9 +30,8 @@ class PersistentFSPaths {
     return new File(new File(myCachesDir), DEPENDENT_PERSISTENT_LIST_START_PREFIX + enumName + VFS_FILES_EXTENSION);
   }
 
-  @Nullable Path getRootsFile() {
-    return FSRecords.ourStoreRootsSeparately
-           ? new File(myCachesDir).getAbsoluteFile().toPath().resolve("roots" + VFS_FILES_EXTENSION)
-           : null;
+  Path getRootsFile() {
+    if (FSRecords.ourStoreRootsSeparately) return new File(myCachesDir).getAbsoluteFile().toPath().resolve("roots" + VFS_FILES_EXTENSION);
+    else return null;
   }
 }

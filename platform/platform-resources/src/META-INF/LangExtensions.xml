@@ -8,6 +8,7 @@
 
     <appStarter implementation="com.intellij.ide.ui.search.TraverseUIStarter"/>
     <appStarter implementation="com.intellij.formatting.commandLine.FormatterStarter"/>
+    <appStarter implementation="com.intellij.ide.script.IdeScriptStarter"/>
 
     <applicationService serviceInterface="com.intellij.util.Queries"
                         serviceImplementation="com.intellij.util.QueriesImpl"/>
@@ -24,13 +25,6 @@
 
     <searcher forClass="com.intellij.model.search.PsiSymbolReferenceSearchParameters"
               implementationClass="com.intellij.model.search.impl.DefaultReferenceSearcher"/>
-    <searcher forClass="com.intellij.model.search.PsiSymbolReferenceSearchParameters"
-              implementationClass="com.intellij.model.search.impl.PsiToSymbolSearcher"
-              order="last"/>
-    <searcher forClass="com.intellij.find.usages.api.UsageSearchParameters"
-              implementationClass="com.intellij.find.usages.impl.DefaultUsageSearcher"/>
-    <searcher forClass="com.intellij.refactoring.rename.api.RenameUsageSearchParameters"
-              implementationClass="com.intellij.refactoring.rename.impl.DefaultRenameUsageSearcher"/>
     <referencesSearch implementation="com.intellij.psi.impl.search.SearcherQueryExecutor"/>
     <referencesSearch implementation="com.intellij.psi.impl.search.CachesBasedRefSearcher"/>
     <referencesSearch implementation="com.intellij.psi.impl.search.NonPhysicalReferenceSearcher"/>
@@ -57,7 +51,10 @@
     <!-- FileBasedIndex / SerializationManager is quite important and in any case will be used, better to preload it -->
     <applicationService serviceInterface="com.intellij.util.indexing.FileBasedIndex"
                         serviceImplementation="com.intellij.util.indexing.FileBasedIndexImpl" preload="notLightEdit"/>
-    <vfs.asyncListener implementation="com.intellij.util.indexing.ChangedFilesCollector"/>
+    <vfs.asyncListener implementation="com.intellij.util.indexing.events.ChangedFilesCollector"/>
+    <applicationInitializedListener implementation="com.intellij.util.indexing.FileBasedIndexLoader"/>
+    <applicationService serviceImplementation="com.intellij.util.indexing.diagnostic.IndexDiagnosticDumper" preload="notLightEdit"/>
+    <applicationService serviceImplementation="com.intellij.util.indexing.roots.ModuleIndexableFilesPolicy"/>
 
     <!-- required for any persistence state component (pathMacroSubstitutor.expandPaths), so, preload -->
     <applicationService serviceInterface="com.intellij.openapi.application.PathMacros"
@@ -128,7 +125,6 @@
     <applicationService serviceImplementation="com.intellij.codeInsight.documentation.DocumentationManagerUtil"/>
 
     <applicationService serviceImplementation="com.intellij.codeInsight.template.impl.TemplateSettings"/>
-    <applicationService serviceImplementation="com.intellij.codeInsight.template.impl.ExportableTemplateSettings"/>
     <applicationService serviceImplementation="com.intellij.execution.ui.layout.impl.RunnerLayoutSettings"/>
 
     <applicationService serviceImplementation="com.intellij.codeEditor.printing.PrintSettings"/>
@@ -269,7 +265,6 @@
       </description>
     </experimentalFeature>
 
-    <readerModeProvider implementation="com.intellij.codeInsight.actions.BreadcrumbsReaderModeProvider"/>
     <readerModeProvider implementation="com.intellij.codeInsight.actions.FontReaderModeProvider"/>
     <readerModeProvider implementation="com.intellij.codeInsight.actions.LigaturesReaderModeProvider"/>
     <readerModeProvider implementation="com.intellij.codeInsight.actions.HighlightingReaderModeProvider"/>
@@ -887,7 +882,6 @@
 
     <projectService serviceInterface="com.intellij.usageView.UsageViewContentManager"
                     serviceImplementation="com.intellij.usageView.impl.UsageViewContentManagerImpl"/>
-    <projectService serviceImplementation="com.intellij.usageView.UsageViewManager"/>
     <applicationService serviceImplementation="com.intellij.ide.projectView.impl.ProjectViewSharedSettings"/>
     <projectService serviceInterface="com.intellij.ide.projectView.ProjectView"
                     serviceImplementation="com.intellij.ide.projectView.impl.ProjectViewImpl"/>
@@ -960,6 +954,7 @@
     <projectService serviceImplementation="com.intellij.analysis.problemsView.toolWindow.HighlightingErrorsProvider"/>
     <projectService serviceInterface="com.intellij.analysis.problemsView.ProblemsCollector"
                     serviceImplementation="com.intellij.analysis.problemsView.toolWindow.ProjectErrorsCollector"/>
+    <statistics.counterUsagesCollector implementationClass="com.intellij.analysis.problemsView.toolWindow.ProblemsViewStatsCollector"/>
 
     <projectViewPane implementation="com.intellij.ide.scopeView.ScopeViewPane"/>
 
@@ -991,7 +986,7 @@
     <statistics.counterUsagesCollector groupId="move.refactoring" version="1"/>
     <statistics.counterUsagesCollector groupId="refactoring" version="1"/>
     <statistics.counterUsagesCollector groupId="package.management.ui" version="1"/>
-    <statistics.counterUsagesCollector groupId="completion" version="5"/>
+    <statistics.counterUsagesCollector groupId="completion" version="6"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.find.findUsages.FindUsagesStatisticsCollector"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.usages.impl.UsageViewStatisticsCollector"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.openapi.fileTypes.impl.FileTypeConfigurableInteractions"/>
@@ -1015,6 +1010,7 @@
     <statistics.validation.customValidationRule implementation="com.intellij.notification.impl.NotificationCollector$NotificationGroupValidator"/>
     <statistics.validation.customValidationRule implementation="com.intellij.notification.impl.NotificationCollector$NotificationIdValidator"/>
     <statistics.validation.customValidationRule implementation="com.intellij.internal.statistic.FavoriteTypeValidationRule"/>
+    <statistics.validation.customValidationRule implementation="com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetUsagesCollector$StatusBarWidgetFactoryValidationRule"/>
 
     <statistics.projectUsagesCollector implementation="com.intellij.execution.impl.statistics.RunConfigurationTypeUsagesCollector"/>
     <statistics.applicationUsagesCollector implementation="com.intellij.internal.statistic.editor.EditorSettingsStatisticsCollector"/>
@@ -1033,11 +1029,11 @@
     <statistics.counterUsagesCollector groupId="searchEverywhere" version="4"/>
     <statistics.counterUsagesCollector groupId="actions.runAnything" version="2"/>
     <statistics.counterUsagesCollector groupId="surround.with" version="2"/>
-    <statistics.counterUsagesCollector groupId="find" version="3"/>
-    <statistics.counterUsagesCollector groupId="create.directory.dialog" version="1"/>
-    <statistics.counterUsagesCollector groupId="refactoring.dialog" version="1"/>
+    <statistics.counterUsagesCollector groupId="find" version="4"/>
+    <statistics.counterUsagesCollector groupId="create.directory.dialog" version="2"/>
+    <statistics.counterUsagesCollector groupId="refactoring.dialog" version="2"/>
     <statistics.counterUsagesCollector groupId="project.view.pane.changes" version="1"/>
-    <statistics.counterUsagesCollector groupId="run.configuration.exec" version="58"/>
+    <statistics.counterUsagesCollector groupId="run.configuration.exec" version="59"/>
     <statistics.counterUsagesCollector groupId="intentions" version="57"/>
     <statistics.counterUsagesCollector groupId="completion.postfix" version="57"/>
 
@@ -1094,6 +1090,8 @@
     <usageContextPanelProvider implementation="com.intellij.usageView.impl.UsageContextCallHierarchyPanel$Provider"/>
     <fileDocumentSynchronizationVetoer implementation="com.intellij.codeInsight.lookup.impl.LookupDocumentSavingVetoer"/>
     <toolsProvider implementation="com.intellij.tools.LocalToolsProvider"/>
+
+    <projectService serviceInterface="com.intellij.ide.tags.TagManager" serviceImplementation="com.intellij.ide.tags.TagManagerImpl"/>
 
     <favoritesListProvider implementation="com.intellij.ide.bookmarks.BookmarksFavoriteListProvider"/>
     <favoritesListProvider implementation="com.intellij.xdebugger.impl.breakpoints.BreakpointsFavoriteListProvider"/>
@@ -1241,7 +1239,7 @@
     <searchEverywhereContributor implementation="com.intellij.ide.actions.searcheverywhere.FileSearchEverywhereContributor$Factory"/>
     <searchEverywhereContributor implementation="com.intellij.ide.actions.searcheverywhere.SymbolSearchEverywhereContributor$Factory"/>
     <searchEverywhereContributor implementation="com.intellij.ide.actions.searcheverywhere.ActionSearchEverywhereContributor$Factory"/>
-    <searchEverywhereContributor implementation="com.intellij.ide.actions.searcheverywhere.CalculatorSEContributor$Factory"/>
+    <searchEverywhereContributor implementation="com.intellij.ide.actions.searcheverywhere.CalculatorSEContributorFactory"/>
 
     <searchEverywhereResultsEqualityProvider implementation="com.intellij.ide.actions.searcheverywhere.TrivialElementsEqualityProvider"/>
     <searchEverywhereResultsEqualityProvider implementation="com.intellij.ide.actions.searcheverywhere.PsiElementsEqualityProvider"/>
@@ -1371,12 +1369,24 @@
     <indexableFilesContributor implementation="com.intellij.util.indexing.roots.DefaultProjectIndexableFilesContributor" order="first"/>
     <indexableFilesContributor implementation="com.intellij.util.indexing.roots.AdditionalFilesContributor" order="last" id="aditionalFiles"/>
     <indexableFilesContributor implementation="com.intellij.util.indexing.roots.AdditionalLibraryRootsContributor" order="last, after aditionalFiles"/>
-    <psi.treeChangePreprocessor implementation="com.intellij.util.indexing.FileBasedIndexTreeChangePreprocessor"/>
+    <psi.treeChangePreprocessor implementation="com.intellij.util.indexing.events.FileBasedIndexTreeChangePreprocessor"/>
 
     <projectService serviceImplementation="com.intellij.execution.segmentedRunDebugWidget.StateWidgetManager"/>
 
     <fileSetDescriptorFactory implementation="com.intellij.application.options.codeStyle.excludedFiles.NamedScopeDescriptor$Factory"/>
     <fileSetDescriptorFactory implementation="com.intellij.application.options.codeStyle.excludedFiles.PatternDescriptor$Factory"/>
+
+    <fileBasedIndexLayout id="mv-store"
+                          presentableNameKey="mv.store.storage.presentable.name"
+                          bundleName="messages.LangBundle"
+                          providerClass="com.intellij.util.indexing.impl.storage.mvstore.MVStoreForwardIndexStorageLayoutProvider"
+                          version="0"/>
+
+    <fileBasedIndexLayout id="in-memory"
+                          presentableNameKey="in.memory.storage.presentable.name"
+                          bundleName="messages.LangBundle"
+                          providerClass="com.intellij.util.indexing.impl.storage.InMemoryStorageLayoutProvider"
+                          version="0"/>
   </extensions>
   <applicationListeners>
     <listener class="com.intellij.util.indexing.FileBasedIndexPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>

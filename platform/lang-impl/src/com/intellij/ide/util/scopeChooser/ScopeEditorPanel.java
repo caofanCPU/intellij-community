@@ -5,7 +5,7 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.impl.FlattenModulesToggleAction;
 import com.intellij.ide.projectView.impl.nodes.ProjectViewDirectoryHelper;
-import com.intellij.lang.LangBundle;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
 import com.intellij.openapi.application.ApplicationManager;
@@ -17,6 +17,7 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.packageDependencies.DependencyUISettings;
@@ -30,6 +31,8 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.Consumer;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.messages.SimpleMessageBusConnection;
+import com.intellij.util.messages.Topic;
 import com.intellij.util.ui.ColorIcon;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
@@ -53,7 +56,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-public final class ScopeEditorPanel {
+public final class ScopeEditorPanel implements Disposable {
   private JPanel myButtonsPanel;
   private RawCommandLineEditor myPatternField;
   private JPanel myTreeToolbar;
@@ -84,6 +87,11 @@ public final class ScopeEditorPanel {
   private final MyAction myIncludeRec = new MyAction("button.include.recursively", this::includeSelected);
   private final MyAction myExclude = new MyAction("button.exclude", this::excludeSelected);
   private final MyAction myExcludeRec = new MyAction("button.exclude.recursively", this::excludeSelected);
+
+  interface SettingsChangedListener {
+    Topic<SettingsChangedListener> TOPIC = new Topic<>(SettingsChangedListener.class, Topic.BroadcastDirection.TO_CHILDREN);
+    void settingsChanged();
+  }
 
   public ScopeEditorPanel(@NotNull final Project project, @NotNull NamedScopesHolder holder) {
     myProject = project;
@@ -144,16 +152,23 @@ public final class ScopeEditorPanel {
     });
 
     initTree(myPackageTree);
-    new UiNotifyConnector(myPanel, new Activatable() {
-
+    Disposer.register(this, new UiNotifyConnector(myPanel, new Activatable() {
       @Override
       public void hideNotify() {
         cancelCurrentProgress();
       }
-    });
+    }));
     myPartiallyIncluded.setIcon(JBUIScale.scaleIcon(new ColorIcon(10, MyTreeCellRenderer.PARTIAL_INCLUDED)));
     myRecursivelyIncluded.setIcon(JBUIScale.scaleIcon(new ColorIcon(10, MyTreeCellRenderer.WHOLE_INCLUDED)));
+
+    SimpleMessageBusConnection connection = project.getMessageBus().connect(this);
+    connection.subscribe(SettingsChangedListener.TOPIC, () -> {
+      rebuild(false);
+    });
   }
+  
+  @Override
+  public void dispose() { }
 
   private void updateCaretPositionText() {
     if (myErrorMessage != null) {
@@ -355,11 +370,13 @@ public final class ScopeEditorPanel {
     }
     return result;
   }
-
-
+  
   private JComponent createTreeToolbar() {
     final DefaultActionGroup group = new DefaultActionGroup();
-    final Runnable update = () -> rebuild(true);
+    final Runnable update = () -> {
+      myProject.getMessageBus().syncPublisher(SettingsChangedListener.TOPIC).settingsChanged();
+      rebuild(true);
+    };
     if (ProjectViewDirectoryHelper.getInstance(myProject).supportsFlattenPackages()) {
       group.add(new FlattenPackagesAction(update));
     }
@@ -481,9 +498,6 @@ public final class ScopeEditorPanel {
           ((PackageDependenciesNode)model.getRoot()).sortChildren();
           if (myErrorMessage == null) {
             String message = IdeBundle.message("label.scope.contains.files", model.getMarkedFileCount(), model.getTotalFileCount());
-            if (FilePatternPackageSet.SCOPE_FILE.equals(DependencyUISettings.getInstance().SCOPE_TYPE)) {
-              message = UIUtil.toHtml(message + "<br>" + LangBundle.message("non.project.files.are.not.shown"));
-            }
             myMatchingCountLabel.setText(message);
             myMatchingCountLabel.setForeground(new JLabel().getForeground());
           }

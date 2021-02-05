@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.navigationToolbar;
 
 import com.intellij.ide.IdeBundle;
@@ -10,9 +10,11 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.PsiElement;
 import com.intellij.ui.DirtyUI;
+import com.intellij.ui.RelativeFont;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.util.PlatformIcons;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
@@ -91,6 +93,8 @@ public class NavBarItem extends SimpleColoredComponent implements DataProvider, 
       setFocusBorderAroundIcon(true);
     }
 
+    Font font = getFont();
+    setFont(RelativeFont.NORMAL.fromResource("NavBar.fontSizeOffset", 0).derive(font));
     update();
   }
 
@@ -99,7 +103,7 @@ public class NavBarItem extends SimpleColoredComponent implements DataProvider, 
   }
 
   public Object getObject() {
-    return myObject == null ? null : TreeAnchorizer.getService().retrieveElement(myObject);
+    return myObject == null ? null : SlowOperations.allowSlowOperations(() -> TreeAnchorizer.getService().retrieveElement(myObject));
   }
 
   public SimpleTextAttributes getAttributes() {

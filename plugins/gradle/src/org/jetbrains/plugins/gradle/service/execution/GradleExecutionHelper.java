@@ -185,7 +185,7 @@ public class GradleExecutionHelper {
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> FileUtil.delete(wrapperFilesLocation), "GradleExecutionHelper cleanup"));
 
-            StringJoiner lines = new StringJoiner(SystemProperties.getLineSeparator());
+            StringJoiner lines = new StringJoiner(System.lineSeparator());
             lines.add("");
             lines.add("gradle.projectsEvaluated { gr ->");
             lines.add("  def wrapper = gr.rootProject.tasks[\"wrapper\"]");
@@ -382,7 +382,6 @@ public class GradleExecutionHelper {
   static List<String> mergeJvmArgs(String serviceDirectory, List<String> jvmArgs, List<String> jvmArgsFromIdeSettings) {
     File gradleUserHomeDir = serviceDirectory != null ? new File(serviceDirectory) : new BuildLayoutParameters().getGradleUserHomeDir();
     LOG.debug("Gradle home: " + gradleUserHomeDir);
-    NativeServices.initialize(gradleUserHomeDir);
     JvmOptions jvmOptions = new JvmOptions(null);
     List<String> mergedJvmArgs = mergeJvmArgs(jvmArgs, jvmArgsFromIdeSettings);
     jvmOptions.setAllJvmArgs(mergedJvmArgs);

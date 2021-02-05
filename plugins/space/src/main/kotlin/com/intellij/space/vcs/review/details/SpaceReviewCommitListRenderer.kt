@@ -1,6 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.space.vcs.review.details
 
+import com.intellij.icons.AllIcons
+import com.intellij.space.vcs.review.details.SpaceReviewCommit.subject
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.speedSearch.SpeedSearchUtil
@@ -12,7 +14,7 @@ import java.awt.Component
 import javax.swing.JList
 import javax.swing.ListCellRenderer
 
-class SpaceCommitRenderer : ListCellRenderer<ReviewCommitListItem> {
+internal class SpaceCommitRenderer : ListCellRenderer<SpaceReviewCommitListItem> {
 
   private val nodeComponent: CommitNodeComponent = CommitNodeComponent().apply {
     foreground = DefaultColorGenerator().getColor(1)
@@ -27,8 +29,8 @@ class SpaceCommitRenderer : ListCellRenderer<ReviewCommitListItem> {
   var panel: BorderLayoutPanel = BorderLayoutPanel().addToLeft(nodeComponent).addToCenter(messageComponent)
 
 
-  override fun getListCellRendererComponent(list: JList<out ReviewCommitListItem>,
-                                            value: ReviewCommitListItem,
+  override fun getListCellRendererComponent(list: JList<out SpaceReviewCommitListItem>,
+                                            value: SpaceReviewCommitListItem,
                                             index: Int,
                                             isSelected: Boolean,
                                             cellHasFocus: Boolean): Component {
@@ -48,12 +50,14 @@ class SpaceCommitRenderer : ListCellRenderer<ReviewCommitListItem> {
     }
 
     messageComponent.clear()
-    messageComponent.append(value.commitWithGraph.commit.message, // NON-NLS
+    messageComponent.icon = if (value.commitWithGraph.unreachable) AllIcons.General.Warning else null
+    messageComponent.append(value.commitWithGraph.commit.subject(), // NON-NLS
                             SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, UIUtil.getListForeground(isSelected, true)))
     SpeedSearchUtil.applySpeedSearchHighlighting(list, messageComponent, true, isSelected)
 
     val size = value.commitsInRepository
     when {
+      value.commitWithGraph.unreachable -> nodeComponent.type = CommitNodeComponent.Type.SINGLE
       size <= 1 -> nodeComponent.type = CommitNodeComponent.Type.SINGLE
       value.index == 0 -> nodeComponent.type = CommitNodeComponent.Type.FIRST
       value.index == size - 1 -> nodeComponent.type = CommitNodeComponent.Type.LAST

@@ -1269,4 +1269,14 @@ public class PyTypeCheckerInspectionTest extends PyInspectionTestCase {
   public void testClassInstanceAgainstProtocolDunderCall() {
     runWithLanguageLevel(LanguageLevel.getLatest(), this::doTest);
   }
+
+  // PY-36062
+  public void testModuleTypeParameter() {
+    runWithLanguageLevel(LanguageLevel.getLatest(), this::doMultiFileTest);
+  }
+
+  // PY-43841
+  public void testPyFunctionAgainstBuiltinFunction() {
+    runWithLanguageLevel(LanguageLevel.getLatest(), this::doTest);
+  }
 }

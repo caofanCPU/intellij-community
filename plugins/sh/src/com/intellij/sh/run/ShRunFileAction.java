@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.sh.run;
 
 import com.intellij.execution.ExecutionManager;
@@ -12,6 +12,7 @@ import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.sh.parser.ShShebangParserUtil;
@@ -19,7 +20,7 @@ import com.intellij.sh.psi.ShFile;
 import com.intellij.util.ObjectUtils;
 import org.jetbrains.annotations.NotNull;
 
-public class ShRunFileAction extends DumbAwareAction {
+final class ShRunFileAction extends DumbAwareAction {
   static final String ID = "runShellFileAction";
 
   @Override
@@ -61,8 +62,8 @@ public class ShRunFileAction extends DumbAwareAction {
       PsiFile file = e.getData(CommonDataKeys.PSI_FILE);
       if (file != null) {
         if (file instanceof ShFile) return true;
-        PsiElement firstChild = file.getFirstChild();
-        return firstChild != null && firstChild.getText().startsWith("#!");
+        PsiElement firstChild = file.findElementAt(0);
+        return firstChild instanceof PsiComment && firstChild.getText().startsWith("#!");
       }
     }
     return false;

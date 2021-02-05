@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.util;
 
 import com.intellij.lang.ASTNode;
@@ -67,7 +67,10 @@ import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatem
 import org.jetbrains.plugins.groovy.lang.psi.api.util.GrNamedArgumentsOwner;
 import org.jetbrains.plugins.groovy.lang.psi.controlFlow.Instruction;
 import org.jetbrains.plugins.groovy.lang.psi.dataFlow.types.TypeInferenceHelper;
-import org.jetbrains.plugins.groovy.lang.psi.impl.*;
+import org.jetbrains.plugins.groovy.lang.psi.impl.GrAnnotationUtil;
+import org.jetbrains.plugins.groovy.lang.psi.impl.GrMapType;
+import org.jetbrains.plugins.groovy.lang.psi.impl.GrTupleType;
+import org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.signatures.GrClosureSignatureUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.TypesUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.literals.GrLiteralImpl;
@@ -338,10 +341,10 @@ public final class PsiUtil {
   }
 
   public static Iterable<PsiClass> iterateSupers(@NotNull final PsiClass psiClass, final boolean includeSelf) {
-    return new Iterable<PsiClass>() {
+    return new Iterable<>() {
       @Override
       public Iterator<PsiClass> iterator() {
-        return new Iterator<PsiClass>() {
+        return new Iterator<>() {
           final IntArrayList indices = new IntArrayList();
           final Stack<PsiClassType[]> superTypesStack = new Stack<>();
           final Set<PsiClass> visited = new HashSet<>();
@@ -1192,12 +1195,7 @@ public final class PsiUtil {
   }
 
   public static boolean isInStaticCompilationContext(@NotNull GrReferenceExpression expression) {
-    return isCompileStatic(expression) || GrStaticChecker.isPropertyAccessInStaticMethod(expression);
-  }
-
-  public static boolean isCompileStatic(PsiElement e) {
-    PsiMember containingMember = PsiTreeUtil.getParentOfType(e, PsiMember.class, false);
-    return containingMember != null && GroovyPsiManager.getInstance(containingMember.getProject()).isCompileStatic(containingMember);
+    return CompileStaticUtil.isCompileStatic(expression) || GrStaticChecker.isPropertyAccessInStaticMethod(expression);
   }
 
   public static boolean isNewified(@Nullable PsiElement expr) {
@@ -1451,7 +1449,7 @@ public final class PsiUtil {
   }
 
   public static boolean isEligibleForInvocationWithNull(@NotNull GrCall call) {
-    if (isCompileStatic(call) || call.hasClosureArguments()) {
+    if (CompileStaticUtil.isCompileStatic(call) || call.hasClosureArguments()) {
       return false;
     }
     var argumentList = call.getArgumentList();

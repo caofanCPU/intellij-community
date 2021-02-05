@@ -5,23 +5,21 @@ import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.fileTypes.FileType.CharsetHint.ForcedCharset;
 import com.intellij.openapi.vfs.encoding.EncodingRegistry;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.indexing.flavor.FileIndexingFlavorProvider;
 import com.intellij.util.indexing.flavor.HashBuilder;
-import com.intellij.util.io.DigestUtil;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 
 @ApiStatus.Internal
 public final class IndexedHashesSupport {
-  private static final boolean SKIP_CONTENT_DEPENDENT_CHARSETS = SystemProperties.is("idea.index.hash.skip.content.dependent.charset");
+  private static final boolean SKIP_CONTENT_DEPENDENT_CHARSETS =
+    SystemProperties.getBooleanProperty("idea.index.hash.skip.content.dependent.charset", true);
   // TODO replace with sha-256
   private static final HashFunction INDEXED_FILE_CONTENT_HASHER = Hashing.sha1();
 
@@ -41,13 +39,7 @@ public final class IndexedHashesSupport {
   }
 
   public static byte @NotNull [] getBinaryContentHash(byte @NotNull [] content) {
-    // TODO: simplify to calculating content hash of only the content[].
-    // Shared Indexes that are already available on CDN will have their hashes invalidated after it.
-    MessageDigest digest = DigestUtil.sha1();
-    digest.update(String.valueOf(content.length).getBytes(StandardCharsets.UTF_8));
-    digest.update("\u0000".getBytes(StandardCharsets.UTF_8));
-    digest.update(content);
-    return digest.digest();
+    return INDEXED_FILE_CONTENT_HASHER.hashBytes(content).asBytes();
   }
 
   public static byte @NotNull [] calculateIndexedHash(@NotNull IndexedFile indexedFile, byte @NotNull [] contentHash) {
@@ -55,13 +47,9 @@ public final class IndexedHashesSupport {
     hasher.putBytes(contentHash);
 
     if (!FileContentImpl.getFileTypeWithoutSubstitution(indexedFile).isBinary()) {
-      FileType fileType = indexedFile.getFileType();
-      FileType.CharsetHint charsetHint = fileType.getCharsetHint();
       // we don't need charset if it depends only on content
-      if (charsetHint != FileType.CharsetHint.CONTENT_DEPENDENT_CHARSET || !SKIP_CONTENT_DEPENDENT_CHARSETS) {
-        Charset charset = charsetHint instanceof ForcedCharset
-                          ? ((ForcedCharset)charsetHint).getCharset()
-                          : getCharsetFromIndexedFile(indexedFile);
+      if (!SKIP_CONTENT_DEPENDENT_CHARSETS) {
+        Charset charset = getCharsetFromIndexedFile(indexedFile);
         hasher.putString(charset.name(), StandardCharsets.UTF_8);
       }
       else {

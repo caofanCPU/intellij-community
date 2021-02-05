@@ -73,17 +73,6 @@ public abstract class LRUPopupBuilder<T> {
     });
   }
 
-  /**
-   * @deprecated use {@link #forFileLanguages(Project, String, Language, Consumer)}
-   */
-  @Deprecated
-  @NotNull
-  public static ListPopup forFileLanguages(@NotNull Project project,
-                                           @Nullable Language selection,
-                                           @NotNull Consumer<? super Language> onChosen) {
-    return forFileLanguages(project, "Languages", selection, onChosen); //NON-NLS
-  }
-
   @NotNull
   public static ListPopup forFileLanguages(@NotNull Project project,
                                            @NotNull @PopupTitle String title,
@@ -181,7 +170,7 @@ public abstract class LRUPopupBuilder<T> {
 
     List<T> combinedItems = ContainerUtil.concat(lru, items, extra);
     BaseListPopupStep<T> step =
-      new BaseListPopupStep<T>(myTitle, combinedItems) {
+      new BaseListPopupStep<>(myTitle, combinedItems) {
         @NotNull
         @Override
         public String getTextFor(T t) {

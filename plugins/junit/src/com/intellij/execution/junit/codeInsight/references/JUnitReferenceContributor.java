@@ -25,19 +25,20 @@ public class JUnitReferenceContributor extends PsiReferenceContributor {
 
   private static PsiElementPattern.Capture<PsiLanguageInjectionHost> getEnumSourceNamesPattern() {
     return getElementPattern(JUnitCommonClassNames.ORG_JUNIT_JUPITER_PARAMS_ENUM_SOURCE, "names")
-      .withAncestor(4, PlatformPatterns.psiElement(PsiAnnotation.class).and(new PsiJavaElementPattern<>(new InitialPatternCondition<PsiAnnotation>(PsiAnnotation.class) {
-        @Override
-        public boolean accepts(@Nullable Object o, ProcessingContext context) {
-          if (o instanceof PsiAnnotation) {
-            PsiAnnotationMemberValue mode = ((PsiAnnotation)o).findAttributeValue("mode");
-            if (mode instanceof PsiReferenceExpression) {
-              String referenceName = ((PsiReferenceExpression)mode).getReferenceName();
-              return "INCLUDE".equals(referenceName) || "EXCLUDE".equals(referenceName);
+      .withAncestor(4, PlatformPatterns.psiElement(PsiAnnotation.class).and(new PsiJavaElementPattern<>(
+        new InitialPatternCondition<>(PsiAnnotation.class) {
+          @Override
+          public boolean accepts(@Nullable Object o, ProcessingContext context) {
+            if (o instanceof PsiAnnotation) {
+              PsiAnnotationMemberValue mode = ((PsiAnnotation)o).findAttributeValue("mode");
+              if (mode instanceof PsiReferenceExpression) {
+                String referenceName = ((PsiReferenceExpression)mode).getReferenceName();
+                return "INCLUDE".equals(referenceName) || "EXCLUDE".equals(referenceName);
+              }
             }
+            return false;
           }
-          return false;
-        }
-      })));
+        })));
   }
 
   @Override
@@ -46,6 +47,18 @@ public class JUnitReferenceContributor extends PsiReferenceContributor {
       @Override
       public PsiReference @NotNull [] getReferencesByElement(@NotNull PsiElement element, @NotNull final ProcessingContext context) {
         return new MethodSourceReference[]{new MethodSourceReference((PsiLanguageInjectionHost)element)};
+      }
+    });
+    registrar.registerReferenceProvider(getElementPattern(JUnitCommonClassNames.ORG_JUNIT_JUPITER_CONDITION_PROVIDER_ENABLED_IF, "value"), new PsiReferenceProvider() {
+      @Override
+      public PsiReference @NotNull [] getReferencesByElement(@NotNull PsiElement element, @NotNull final ProcessingContext context) {
+        return new DisabledIfEnabledIfReference[]{new DisabledIfEnabledIfReference((PsiLanguageInjectionHost)element)};
+      }
+    });
+    registrar.registerReferenceProvider(getElementPattern(JUnitCommonClassNames.ORG_JUNIT_JUPITER_CONDITION_PROVIDER_DISABLED_IF, "value"), new PsiReferenceProvider() {
+      @Override
+      public PsiReference @NotNull [] getReferencesByElement(@NotNull PsiElement element, @NotNull final ProcessingContext context) {
+        return new DisabledIfEnabledIfReference[]{new DisabledIfEnabledIfReference((PsiLanguageInjectionHost)element)};
       }
     });
     registrar.registerReferenceProvider(getEnumSourceNamesPattern(), new PsiReferenceProvider() {
@@ -92,9 +105,9 @@ public class JUnitReferenceContributor extends PsiReferenceContributor {
         if (element instanceof UAnnotation) {
           return (UAnnotation)element;
         }
-        if (element.getUastParent() != null) {
-          element = element.getUastParent();
-        } else return null;
+        UElement parent = element.getUastParent();
+        if (parent == null) return null;
+        element = parent;
       }
       return null;
     }

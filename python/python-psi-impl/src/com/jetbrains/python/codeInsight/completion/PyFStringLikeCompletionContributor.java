@@ -42,7 +42,7 @@ public class PyFStringLikeCompletionContributor extends CompletionContributor {
       .andNot(psiElement().inside(PyStringFormatCompletionContributor.FORMAT_STRING_CAPTURE));
 
   public PyFStringLikeCompletionContributor() {
-    extend(CompletionType.BASIC, INSIDE_NON_FORMATTED_STRING_ELEMENT, new CompletionProvider<CompletionParameters>() {
+    extend(CompletionType.BASIC, INSIDE_NON_FORMATTED_STRING_ELEMENT, new CompletionProvider<>() {
       @Override
       protected void addCompletions(@NotNull CompletionParameters parameters,
                                     @NotNull ProcessingContext context,
@@ -68,8 +68,8 @@ public class PyFStringLikeCompletionContributor extends CompletionContributor {
         if (autoPopupAfterOpeningBrace) {
           return;
         }
-        boolean impossibleReferencePrefix = !completionPrefix.isEmpty() && !PyNames.isIdentifier(completionPrefix);
-        if (impossibleReferencePrefix) {
+        boolean prefixCannotStartReference = !completionPrefix.isEmpty() && !PyNames.isIdentifier(completionPrefix);
+        if (prefixCannotStartReference) {
           return;
         }
         PyExpression fString = PyUtil.createExpressionFromFragment("f" + stringElemText, stringLiteral.getParent());
@@ -84,7 +84,7 @@ public class PyFStringLikeCompletionContributor extends CompletionContributor {
         }
         CompletionResultSet prefixPatchedResultSet = result.withPrefixMatcher(completionPrefix);
         for (LookupElement variant : fStringVariants) {
-          prefixPatchedResultSet.addElement(new LookupElementDecorator<LookupElement>(variant) {
+          prefixPatchedResultSet.addElement(new LookupElementDecorator<>(variant) {
             @Override
             public void handleInsert(@NotNull InsertionContext context) {
               super.handleInsert(context);

@@ -86,7 +86,6 @@ public final class VcsFileStatusProvider implements FileStatusProvider, VcsBaseC
     return FileDocumentManager.getInstance().isFileModified(virtualFile);
   }
 
-  @Override
   public void refreshFileStatusFromDocument(@NotNull final VirtualFile virtualFile, @NotNull final Document doc) {
     if (LOG.isDebugEnabled()) {
       LOG.debug("refreshFileStatusFromDocument: file.getModificationStamp()=" + virtualFile.getModificationStamp() +
@@ -125,7 +124,6 @@ public final class VcsFileStatusProvider implements FileStatusProvider, VcsBaseC
   }
 
   @NotNull
-  @Override
   public ThreeState getNotChangedDirectoryParentingStatus(@NotNull VirtualFile virtualFile) {
     if (VcsConfiguration.getInstance(myProject).SHOW_DIRTY_RECURSIVELY) {
       return ChangeListManager.getInstance(myProject).haveChangesUnder(virtualFile);
@@ -163,9 +161,11 @@ public final class VcsFileStatusProvider implements FileStatusProvider, VcsBaseC
 
     if (status == FileStatus.NOT_CHANGED) {
       AbstractVcs vcs = ProjectLevelVcsManager.getInstance(myProject).getVcsFor(file);
-      if (vcs != null) {
-        DiffProvider diffProvider = vcs.getDiffProvider();
-        if (diffProvider != null) {
+      DiffProvider diffProvider = vcs != null ? vcs.getDiffProvider() : null;
+      ChangeProvider cp = vcs != null ? vcs.getChangeProvider() : null;
+      if (diffProvider != null && cp != null) {
+        if (cp.isModifiedDocumentTrackingRequired() &&
+            FileDocumentManager.getInstance().isFileModified(file)) {
           ContentRevision beforeRevision = diffProvider.createCurrentFileContent(file);
           if (beforeRevision != null) return createBaseContent(myProject, beforeRevision);
         }

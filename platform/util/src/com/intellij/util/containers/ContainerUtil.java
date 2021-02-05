@@ -1,4 +1,4 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.containers;
 
 import com.intellij.openapi.Disposable;
@@ -17,11 +17,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
-import java.util.function.IntFunction;
 
 @ApiStatus.NonExtendable
-// cannot be final because of https://plugins.jetbrains.com/plugin/7831-illuminated-cloud
-public class ContainerUtil {
+public final class ContainerUtil {
   private static final int INSERTION_SORT_THRESHOLD = 10;
 
   @SafeVarargs
@@ -43,6 +41,7 @@ public class ContainerUtil {
    * @deprecated Use {@link HashMap#HashMap(Map)}
    */
   @Contract(pure = true)
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
   @Deprecated
   public static @NotNull <K, V> HashMap<K, V> newHashMap(@NotNull Map<? extends K, ? extends V> map) {
     return new HashMap<>(map);
@@ -73,39 +72,12 @@ public class ContainerUtil {
   }
 
   /**
-   * @deprecated Use {@link TreeMap#TreeMap()}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <K extends Comparable<? super K>, V> TreeMap<K, V> newTreeMap() {
-    return new TreeMap<>();
-  }
-
-  /**
-   * @deprecated Use {@link TreeMap#TreeMap(Map)}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <K extends Comparable<? super K>, V> TreeMap<K, V> newTreeMap(@NotNull Map<? extends K, ? extends V> map) {
-    return new TreeMap<>(map);
-  }
-
-  /**
    * @deprecated Use {@link LinkedHashMap#LinkedHashMap()}
    */
   @Contract(pure = true)
   @Deprecated
   public static @NotNull <K, V> LinkedHashMap<K, V> newLinkedHashMap() {
     return new LinkedHashMap<>();
-  }
-
-  /**
-   * @deprecated Use {@link LinkedHashMap#LinkedHashMap(Map)}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <K, V> LinkedHashMap<K, V> newLinkedHashMap(@NotNull Map<? extends K, ? extends V> map) {
-    return new LinkedHashMap<>(map);
   }
 
   @SafeVarargs
@@ -123,27 +95,21 @@ public class ContainerUtil {
    * @deprecated Use {@link THashMap#THashMap(Map)}
    */
   @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
   @Contract(pure = true)
   public static @NotNull <K, V> THashMap<K, V> newTroveMap() {
     return new THashMap<>();
   }
 
-  /**
-   * @deprecated Use {@link THashMap#THashMap(TObjectHashingStrategy)}
-   */
   @Deprecated
-  @Contract(pure = true)
-  public static @NotNull <K, V> THashMap<K, V> newTroveMap(@NotNull TObjectHashingStrategy<K> strategy) {
-    return new THashMap<>(strategy);
-  }
-
-  @Contract(pure = true)
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
   public static @NotNull <T> TObjectHashingStrategy<T> canonicalStrategy() {
     //noinspection unchecked
     return TObjectHashingStrategy.CANONICAL;
   }
 
-  @Contract(pure = true)
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
   public static @NotNull <T> TObjectHashingStrategy<T> identityStrategy() {
     //noinspection unchecked
     return TObjectHashingStrategy.IDENTITY;
@@ -309,15 +275,6 @@ public class ContainerUtil {
     return new HashSet<>();
   }
 
-  /**
-   * @deprecated Use {@link HashSet#HashSet(int)}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <T> HashSet<T> newHashSet(int initialCapacity) {
-    return new HashSet<>(initialCapacity);
-  }
-
   @SafeVarargs
   @Contract(pure = true)
   public static @NotNull <T> HashSet<T> newHashSet(T @NotNull ... elements) {
@@ -412,15 +369,6 @@ public class ContainerUtil {
   }
 
   /**
-   * @deprecated Use {@link THashSet#THashSet(Collection)}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <T> THashSet<T> newTroveSet(@NotNull Collection<? extends T> elements) {
-    return new THashSet<>(elements);
-  }
-
-  /**
    * @deprecated Use {@link it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap}
    */
   @Deprecated
@@ -436,15 +384,6 @@ public class ContainerUtil {
   @Contract(pure = true)
   public static @NotNull <T extends Comparable<? super T>> TreeSet<T> newTreeSet() {
     return new TreeSet<>();
-  }
-
-  /**
-   * @deprecated Use {@link TreeSet#TreeSet(Comparator)}
-   */
-  @Contract(pure = true)
-  @Deprecated
-  public static @NotNull <T> TreeSet<T> newTreeSet(@Nullable Comparator<? super T> comparator) {
-    return new TreeSet<>(comparator);
   }
 
   @Contract(pure = true)
@@ -578,26 +517,6 @@ public class ContainerUtil {
   @Contract(pure = true)
   public static <T> T getOrElse(@NotNull List<? extends T> elements, int i, T defaultValue) {
     return elements.size() > i ? elements.get(i) : defaultValue;
-  }
-
-  @Contract(pure = true)
-  public static @NotNull <U> Iterator<U> mapIterator(@NotNull TIntIterator iterator, @NotNull IntFunction<? extends U> mapper) {
-    return new Iterator<U>() {
-      @Override
-      public boolean hasNext() {
-        return iterator.hasNext();
-      }
-
-      @Override
-      public U next() {
-        return mapper.apply(iterator.next());
-      }
-
-      @Override
-      public void remove() {
-        iterator.remove();
-      }
-    };
   }
 
   public static final class ImmutableMapBuilder<K, V> {
@@ -774,16 +693,6 @@ public class ContainerUtil {
     return list.subList(from, list.size());
   }
 
-  /**
-   * @deprecated Use {@link Collection#addAll(Collection)} instead
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
-  public static <T> void addAll(@NotNull Collection<? super T> collection, @NotNull Collection<? extends T> elements) {
-    DeprecatedMethodException.report("Use `collection.addAll(elements)` instead. "+collection.getClass()+"."+elements.getClass());
-    collection.addAll(elements);
-  }
-
   public static <T> void addAll(@NotNull Collection<? super T> collection, @NotNull Iterable<? extends T> appendix) {
     addAll(collection, appendix.iterator());
   }
@@ -858,15 +767,6 @@ public class ContainerUtil {
       set.add(value);
     }
     return hashMap;
-  }
-
-  /**
-   * @deprecated Use {@link Collections#emptyIterator()} instead
-   */
-  @Deprecated
-  @Contract(pure = true)
-  public static @NotNull <T> Iterator<T> emptyIterator() {
-    return Collections.emptyIterator();
   }
 
   /**
@@ -1027,7 +927,7 @@ public class ContainerUtil {
     return result;
   }
 
-  @Contract(pure=true)
+  @Contract(mutates = "param2")
   public static <T, V> V @NotNull [] map2Array(@NotNull Collection<? extends T> collection, V @NotNull [] to, @NotNull Function<? super T, ? extends V> mapper) {
     return map2List(collection, mapper).toArray(to);
   }
@@ -1753,15 +1653,14 @@ public class ContainerUtil {
 
       @Override
       public T next() {
-        T result;
         if (hasNext) {
-          result = next;
+          T result = next;
           findNext();
+          return result;
         }
         else {
           throw new NoSuchElementException();
         }
-        return result;
       }
 
       @Override
@@ -2014,6 +1913,7 @@ public class ContainerUtil {
   public static <T, V> @NotNull V @NotNull [] mapNotNull(T @NotNull [] array,
                                                          @NotNull Function<? super T, ? extends @Nullable V> mapping,
                                                          V @NotNull [] emptyArray) {
+    assert emptyArray.length == 0 : "You must pass an empty array";
     List<V> result = new ArrayList<>(array.length);
     for (T t : array) {
       V v = mapping.fun(t);
@@ -2022,7 +1922,6 @@ public class ContainerUtil {
       }
     }
     if (result.isEmpty()) {
-      assert emptyArray.length == 0 : "You must pass an empty array";
       return emptyArray;
     }
     return result.toArray(emptyArray);
@@ -2113,17 +2012,6 @@ public class ContainerUtil {
   public static @NotNull <T> Set<T> set(T @NotNull ... items) {
     //noinspection SSBasedInspection
     return new HashSet<>(Arrays.asList(items));
-  }
-
-  /**
-   * @deprecated Use {@link Map#putIfAbsent}
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  public static <K, V> void putIfAbsent(final K key, @Nullable V value, final @NotNull Map<? super K, ? super V> result) {
-    if (!result.containsKey(key)) {
-      result.put(key, value);
-    }
   }
 
   public static <K, V> void putIfNotNull(final K key, @Nullable V value, final @NotNull Map<? super K, ? super V> result) {
@@ -2619,7 +2507,7 @@ public class ContainerUtil {
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K,V> ConcurrentMap<K,V> createConcurrentWeakValueMap() {
-    return new ConcurrentWeakValueHashMap<>();
+    return CollectionFactory.createConcurrentWeakValueMap();
   }
 
   @Contract(value = "_,_,_,_ -> new", pure = true)
@@ -2655,7 +2543,7 @@ public class ContainerUtil {
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K, V> ConcurrentMap<K,V> createConcurrentSoftValueMap() {
-    return new ConcurrentSoftValueHashMap<>();
+    return CollectionFactory.createConcurrentSoftValueMap();
   }
 
   @Contract(value = " -> new", pure = true)
@@ -2665,7 +2553,7 @@ public class ContainerUtil {
 
   @Contract(value = " -> new", pure = true)
   public static @NotNull <K,V> ConcurrentMap<K,V> createConcurrentWeakMap() {
-    return new ConcurrentWeakHashMap<>(0.75f);
+    return CollectionFactory.createConcurrentWeakMap();
   }
 
   @ApiStatus.Internal
@@ -2812,7 +2700,7 @@ public class ContainerUtil {
    * @deprecated use {@link List#toArray(Object[])} instead
    */
   @Deprecated
-  @Contract(pure=true)
+  @Contract(mutates = "param2")
   public static <T> T @NotNull [] toArray(@NotNull List<T> collection, T @NotNull [] array) {
     return collection.toArray(array);
   }
@@ -2821,7 +2709,7 @@ public class ContainerUtil {
    * @deprecated use {@link Collection#toArray(Object[])} instead
    */
   @Deprecated
-  @Contract(pure=true)
+  @Contract(mutates = "param2")
   public static <T> T @NotNull [] toArray(@NotNull Collection<? extends T> c, T @NotNull [] sample) {
     return c.toArray(sample);
   }

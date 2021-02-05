@@ -1,7 +1,6 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.jcef;
 
-import com.intellij.application.options.RegistryManager;
 import com.intellij.testFramework.ApplicationRule;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.ui.scale.TestScaleHelper;
@@ -22,6 +21,8 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+
+import static com.intellij.ui.jcef.JBCefTestHelper.invokeAndWaitForLatch;
 
 /**
  * Tests that {@link JBCefBrowser#loadHTML(String, String)} can load html that references JS via "file://"
@@ -52,14 +53,12 @@ public class JBCefLoadHtmlTest {
 
   @After
   public void after() {
-    TestScaleHelper.restoreSystemProperties();
+    TestScaleHelper.restoreProperties();
   }
 
   @Test
   public void test() {
     TestScaleHelper.assumeStandalone();
-
-    RegistryManager.getInstance().get("ide.browser.jcef.headless.enabled").setValue("true");
 
     JBCefBrowser browser = new JBCefBrowser();
 
@@ -93,7 +92,7 @@ public class JBCefLoadHtmlTest {
 
     writeJS(jsQuery.inject("'hello'"));
 
-    JBCefTestHelper.loadAndWait(LATCH, () -> {
+    invokeAndWaitForLatch(LATCH, () -> {
       JFrame frame = new JFrame(JBCefLoadHtmlTest.class.getName());
       frame.setSize(640, 480);
       frame.setLocationRelativeTo(null);

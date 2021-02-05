@@ -159,6 +159,7 @@ public final class InjectorUtils {
 
   @Nullable
   public static LanguageInjectionSupport findInjectionSupport(@NotNull String id) {
+    if (TemporaryPlacesRegistry.SUPPORT_ID.equals(id)) return new TemporaryLanguageInjectionSupport();
     for (LanguageInjectionSupport support : LanguageInjectionSupport.EP_NAME.getExtensionList()) {
       if (id.equals(support.getId())) return support;
     }
@@ -242,14 +243,6 @@ public final class InjectorUtils {
 
   public static <T> void putInjectedFileUserData(@NotNull PsiElement element, @NotNull Language language, @NotNull Key<T> key, @Nullable T value) {
     InjectedLanguageUtil.putInjectedFileUserData(element, language, key, value);
-  }
-
-  /**
-   * @deprecated use {@link InjectorUtils#putInjectedFileUserData(PsiElement, Language, Key, Object)} instead
-   */
-  @Deprecated
-  public static <T> void putInjectedFileUserData(@NotNull MultiHostRegistrar registrar, @NotNull Key<T> key, T value) {
-    InjectedLanguageUtil.putInjectedFileUserData(registrar, key, value);
   }
 
   @SuppressWarnings("UnusedParameters")

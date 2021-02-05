@@ -44,7 +44,8 @@ class ActionsRecorder(private val project: Project,
   private val actionListeners: MutableList<AnActionListener> = mutableListOf()
   private val eventDispatchers: MutableList<IdeEventQueue.EventDispatcher> = mutableListOf()
 
-  private var disposed = false
+  var disposed = false
+    private set
 
   private val busConnection = ApplicationManager.getApplication().messageBus.connect(this)
 
@@ -194,7 +195,6 @@ class ActionsRecorder(private val project: Project,
     }
     editorListener = object : FileEditorManagerListener {
       override fun selectionChanged(event: FileEditorManagerEvent) {
-        println(event.newFile?.name)
         event.newFile?.name.let {
           if (mutableListOfActions.isNotEmpty() && mutableListOfActions.first() == event.newFile?.name) mutableListOfActions.removeAt(0)
           if (mutableListOfActions.isEmpty()) future.complete(true)

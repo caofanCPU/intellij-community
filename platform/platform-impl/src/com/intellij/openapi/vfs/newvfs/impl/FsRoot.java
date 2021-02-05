@@ -49,16 +49,19 @@ public final class FsRoot extends VirtualDirectoryImpl {
     throw new IncorrectOperationException();
   }
 
-  @NotNull
   @Override
-  public String getPath() {
+  public @NotNull String getPath() {
     return myPathWithOneSlash;
   }
 
-  @NotNull
   @Override
-  public String getUrl() {
+  public @NotNull String getUrl() {
     return getFileSystem().getProtocol() + URLUtil.SCHEME_SEPARATOR + getPath();
+  }
+
+  @Override
+  public @NotNull String getPresentableName() {
+    return getFileSystem().extractPresentableUrl(getName());
   }
 
   private static boolean looksCanonical(@NotNull String pathBeforeSlash) {

@@ -1,7 +1,6 @@
-// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.bookmarks;
 
-import com.intellij.ide.IdeBundle;
 import com.intellij.ide.favoritesTreeView.AbstractFavoritesListProvider;
 import com.intellij.ide.favoritesTreeView.FavoritesManager;
 import com.intellij.ide.projectView.PresentationData;
@@ -15,6 +14,7 @@ import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ui.EmptyIcon;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
 import javax.swing.*;
 import java.util.Collection;
@@ -23,6 +23,9 @@ import java.util.List;
 import java.util.Set;
 
 public class BookmarksFavoriteListProvider extends AbstractFavoritesListProvider<Bookmark> implements BookmarksListener {
+  @VisibleForTesting
+  public static final Icon BOOKMARK = BookmarkType.DEFAULT.getIcon();
+
   public BookmarksFavoriteListProvider(Project project) {
     super(project, "Bookmarks");
 
@@ -55,7 +58,7 @@ public class BookmarksFavoriteListProvider extends AbstractFavoritesListProvider
     myChildren.clear();
     List<Bookmark> bookmarks = BookmarkManager.getInstance(myProject).getValidBookmarks();
     for (Bookmark bookmark : bookmarks) {
-      AbstractTreeNode<Bookmark> child = new AbstractTreeNode<Bookmark>(myProject, bookmark) {
+      AbstractTreeNode<Bookmark> child = new AbstractTreeNode<>(myProject, bookmark) {
         @NotNull
         @Override
         public Collection<? extends AbstractTreeNode<Bookmark>> getChildren() {
@@ -94,9 +97,9 @@ public class BookmarksFavoriteListProvider extends AbstractFavoritesListProvider
   public String getCustomName(@NotNull CommonActionsPanel.Buttons type) {
     switch (type) {
       case EDIT:
-        return IdeBundle.message("action.bookmark.edit.description");
+        return BookmarkBundle.message("action.bookmark.edit.description");
       case REMOVE:
-        return IdeBundle.message("action.bookmark.delete");
+        return BookmarkBundle.message("action.bookmark.delete");
       default:
         return null;
     }
@@ -165,7 +168,7 @@ public class BookmarksFavoriteListProvider extends AbstractFavoritesListProvider
                                 int row,
                                 boolean hasFocus) {
     renderer.clear();
-    renderer.setIcon(Bookmark.DEFAULT_ICON);
+    renderer.setIcon(BOOKMARK);
     if (value instanceof Bookmark) {
       Bookmark bookmark = (Bookmark)value;
       BookmarkItem.setupRenderer(renderer, myProject, bookmark, selected);

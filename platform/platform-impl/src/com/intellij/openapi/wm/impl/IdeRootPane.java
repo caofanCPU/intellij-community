@@ -14,6 +14,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeFrame;
 import com.intellij.openapi.wm.IdeRootPaneNorthExtension;
 import com.intellij.openapi.wm.impl.customFrameDecorations.header.MenuFrameHeader;
@@ -63,6 +64,8 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
   private MenuFrameHeader myCustomFrameTitlePane;
   private CustomDecorationPath mySelectedEditorFilePath;
   private final boolean myDecoratedMenu;
+  private ToolwindowToolbar myLeftToolwindowToolbar;
+  private ToolwindowToolbar myRightToolwindowToolbar;
 
   protected IdeRootPane(@NotNull JFrame frame, @NotNull IdeFrame frameHelper, @NotNull Disposable parentDisposable) {
     if (SystemInfo.isWindows && (StartupUiUtil.isUnderDarcula() || UIUtil.isUnderIntelliJLaF())) {
@@ -74,13 +77,13 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
       }
     }
 
-    myContentPane.add(myNorthPanel, BorderLayout.NORTH);
+    myContentPane.add(IdeFrameDecorator.wrapRootPaneNorthSide(this, myNorthPanel), BorderLayout.NORTH);
 
     // listen to mouse motion events for a11y
     myContentPane.addMouseMotionListener(new MouseMotionAdapter() {
     });
 
-    IdeMenuBar menu = createMenuBar();
+    IdeMenuBar menu = IdeMenuBar.createMenuBar();
     myDecoratedMenu = IdeFrameDecorator.isCustomDecorationActive();
 
     if (!isDecoratedMenu() && !FrameInfoHelper.isFloatingMenuBarSupported()) {
@@ -91,7 +94,7 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
         JdkEx.setHasCustomDecoration(frame);
 
         mySelectedEditorFilePath = CustomDecorationPath.Companion.createInstance(frame);
-        myCustomFrameTitlePane = new MenuFrameHeader(frame, mySelectedEditorFilePath, createMenuBar());
+        myCustomFrameTitlePane = new MenuFrameHeader(frame, mySelectedEditorFilePath, IdeMenuBar.createMenuBar());
         getLayeredPane().add(myCustomFrameTitlePane, JLayeredPane.DEFAULT_LAYER - 2);
       }
 
@@ -117,15 +120,30 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
 
     updateMainMenuVisibility();
 
+    if (Registry.is("ide.new.stripes.ui")) {
+      myLeftToolwindowToolbar = new ToolwindowLeftToolbar();
+      myRightToolwindowToolbar = new ToolwindowRightToolbar();
+      myContentPane.add(myLeftToolwindowToolbar, BorderLayout.WEST);
+      myContentPane.add(myRightToolwindowToolbar, BorderLayout.EAST);
+    }
+
     myContentPane.add(getCenterComponent(frame, parentDisposable), BorderLayout.CENTER);
+
+    if (Registry.is("ide.new.stripes.ui")) {
+      myLeftToolwindowToolbar.toolwindowPane = myToolWindowsPane;
+      myRightToolwindowToolbar.toolwindowPane = myToolWindowsPane;
+    }
   }
 
-  protected @NotNull IdeMenuBar createMenuBar() {
-    return IdeMenuBar.createMenuBar();
+  /**
+   * @return not-null action group or null to use {@link IdeActions#GROUP_MAIN_MENU} action group
+   */
+  protected @Nullable ActionGroup getMainMenuActionGroup() {
+    return null;
   }
 
   protected @NotNull Component getCenterComponent(@NotNull JFrame frame, @NotNull Disposable parentDisposable) {
-    myToolWindowsPane = new ToolWindowsPane(frame, parentDisposable);
+    myToolWindowsPane = new ToolWindowsPane(frame, parentDisposable, myLeftToolwindowToolbar, myRightToolwindowToolbar);
     return myToolWindowsPane;
   }
 
@@ -255,7 +273,7 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
   }
 
   protected @NotNull IdeStatusBarImpl createStatusBar(@NotNull IdeFrame frame) {
-    return new IdeStatusBarImpl(frame, true);
+    return new IdeStatusBarImpl(frame, !Registry.is("ide.new.stripes.ui"));
   }
 
   final @Nullable IdeStatusBarImpl getStatusBar() {

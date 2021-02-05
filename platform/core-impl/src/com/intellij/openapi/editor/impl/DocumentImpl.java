@@ -397,7 +397,7 @@ public final class DocumentImpl extends UserDataHolderBase implements DocumentEx
     if (myIsReadOnly) return false;
 
     for (DocumentWriteAccessGuard guard : DocumentWriteAccessGuard.EP_NAME.getExtensions()) {
-      if (!guard.isWritable(this, myAssertThreading).isSuccess()) return false;
+      if (!guard.isWritable(this).isSuccess()) return false;
     }
 
     return true;
@@ -675,6 +675,12 @@ public final class DocumentImpl extends UserDataHolderBase implements DocumentEx
     }
   }
 
+  @ApiStatus.Internal
+  @ApiStatus.Experimental
+  public boolean isWriteThreadOnly() {
+    return myAssertThreading;
+  }
+
   private void assertWriteAccess() {
     if (myAssertThreading) {
       final Application application = ApplicationManager.getApplication();
@@ -692,7 +698,7 @@ public final class DocumentImpl extends UserDataHolderBase implements DocumentEx
     }
 
     for (DocumentWriteAccessGuard guard : DocumentWriteAccessGuard.EP_NAME.getExtensions()) {
-      DocumentWriteAccessGuard.Result result = guard.isWritable(this, myAssertThreading);
+      DocumentWriteAccessGuard.Result result = guard.isWritable(this);
       if (!result.isSuccess()) {
         throw new ReadOnlyModificationException(
           this, String.format("%s: guardClass=%s, failureReason=%s",
